@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { View, TextInput, Button, Text, StyleSheet, Alert } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@env';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Access environment variables using process.env with EXPO_PUBLIC_ prefix
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -76,4 +79,3 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 });
-
