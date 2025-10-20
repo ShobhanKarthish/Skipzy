@@ -1,5 +1,5 @@
-import SignupScreen from './(tabs)/auth';
+import { Redirect } from 'expo-router';
 
-export default function Page() {
-  return <SignupScreen />;
+export default function Index() {
+  return <Redirect href="/auth" />;
 }
