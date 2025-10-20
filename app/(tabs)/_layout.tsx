@@ -24,11 +24,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="performance"
+        name="subjects"
         options={{
-          title: 'Performance',
+          title: 'Subjects',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart" size={size} color={color} />
+            <Ionicons name="book" size={size} color={color} />
           ),
         }}
       />

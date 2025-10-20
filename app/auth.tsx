@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
+  // Alert, // Removed Alert
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
+  Animated, // Added Animated
+  Easing, // Added Easing
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
@@ -38,6 +40,13 @@ export default function AuthScreen() {
   const [resetCooldown, setResetCooldown] = useState(0);
   const [errors, setErrors] = useState<FormErrors>({});
 
+  // --- NEW TOAST STATE ---
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const toastAnim = useRef(new Animated.Value(-100)).current; // Start off-screen
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // --- END TOAST STATE ---
+
   // Cooldown timer for password reset
   useEffect(() => {
     if (resetCooldown > 0) {
@@ -45,6 +54,38 @@ export default function AuthScreen() {
       return () => clearTimeout(timer);
     }
   }, [resetCooldown]);
+
+  // --- NEW TOAST FUNCTION ---
+  const showToast = (message: string, type: 'success' | 'error') => {
+    // If a toast is already shown, clear its timeout
+    if (toastTimeout.current) {
+      clearTimeout(toastTimeout.current);
+    }
+
+    setToastMessage(message);
+    setToastType(type);
+
+    // Animate in
+    Animated.timing(toastAnim, {
+      toValue: 50, // Slide down to just below the status bar
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+
+    // Set timeout to hide
+    toastTimeout.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: -100, // Slide back up
+        duration: 300,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }).start(() => {
+        setToastMessage(null); // Clear message after animation
+      });
+    }, 3000); // Show for 3 seconds
+  };
+  // --- END TOAST FUNCTION ---
 
   // Validation
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -81,18 +122,18 @@ export default function AuthScreen() {
         password,
       });
 
-      if (error) return Alert.alert('Sign In Failed', error.message);
+      if (error) {
+        showToast(error.message, 'error'); // Replaced Alert
+        return;
+      }
 
-      Alert.alert('Success', 'Welcome back!', [
-        {
-          text: 'OK',
-          onPress: () => router.replace('/home' as Href),
-        },
-      ]);
+      showToast('Welcome back!', 'success'); // Replaced Alert
+      router.replace('/home' as Href);
       console.log('Signed in user:', data.user);
+
     } catch (err) {
       console.error('Sign in error:', err);
-      Alert.alert('Error', 'An error occurred. Please try again.');
+      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
     } finally {
       setLoading(false);
     }
@@ -111,24 +152,21 @@ export default function AuthScreen() {
         },
       });
 
-      if (error) return Alert.alert('Sign Up Failed', error.message);
+      if (error) {
+        showToast(error.message, 'error'); // Replaced Alert
+        return;
+      }
 
-      Alert.alert('Success', 'Account created! Check your email to confirm your account.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setName('');
-            setEmail('');
-            setPassword('');
-            router.replace('/home' as Href);
-          },
-        },
-      ]);
-
+      showToast('Account created! Check your email to confirm.', 'success'); // Replaced Alert
+      setName('');
+      setEmail('');
+      setPassword('');
+      router.replace('/home' as Href);
       console.log('Signed up user:', data.user);
+
     } catch (err) {
       console.error('Sign up error:', err);
-      Alert.alert('Error', 'An error occurred. Please try again.');
+      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
     } finally {
       setLoading(false);
     }
@@ -143,14 +181,17 @@ export default function AuthScreen() {
         redirectTo: 'skipzy://reset-password',
       });
 
-      if (error) return Alert.alert('Reset Failed', error.message);
+      if (error) {
+        showToast(error.message, 'error'); // Replaced Alert
+        return;
+      }
 
-      Alert.alert('Success', 'Password reset link sent! Check your email.');
+      showToast('Password reset link sent! Check your email.', 'success'); // Replaced Alert
       setResetCooldown(60);
       setEmail('');
     } catch (err) {
       console.error('Password reset error:', err);
-      Alert.alert('Error', 'An error occurred. Please try again.');
+      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
     } finally {
       setLoading(false);
     }
@@ -173,6 +214,23 @@ export default function AuthScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* --- NEW TOAST COMPONENT RENDER --- */}
+      {toastMessage && (
+        <Animated.View style={[
+          styles.toastContainer,
+          { transform: [{ translateY: toastAnim }] },
+          toastType === 'error' ? styles.toastError : styles.toastSuccess
+        ]}>
+          <Ionicons
+            name={toastType === 'error' ? 'alert-circle' : 'checkmark-circle'}
+            size={22}
+            color="#ffffff"
+          />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
+      {/* --- END TOAST COMPONENT RENDER --- */}
+
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
@@ -325,4 +383,36 @@ const styles = StyleSheet.create<Record<string, any>>({
   switchText: { textAlign: 'center', color: '#999', fontSize: 14 },
   switchLink: { color: '#8b5cf6', fontWeight: '500' },
   footer: { color: '#999', fontSize: 14, textAlign: 'center', marginTop: 32 },
+
+  // --- NEW TOAST STYLES ---
+  toastContainer: {
+    position: 'absolute',
+    top: 0, // Animated `translateY` will push it down
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  toastSuccess: {
+    backgroundColor: '#10b981', // Green
+  },
+  toastError: {
+    backgroundColor: '#ef4444', // Red
+  },
+  toastText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  // --- END TOAST STYLES ---
 });
