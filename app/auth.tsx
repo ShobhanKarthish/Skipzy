@@ -1,28 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
-  // Alert, // Removed Alert
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  ActivityIndicator,
-  Animated, // Added Animated
-  Easing, // Added Easing
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { useRouter, type Href } from 'expo-router';
 
-// Supabase credentials from .env
+import Toast from '../components/ui/Toast';
+import FormInput from '../components/ui/FormInput';
+import PasswordInput from '../components/ui/PasswordInput';
+import AuthButton from '../components/ui/AuthButton';
+import AuthSwitchLink from '../components/ui/AuthSwitchLink';
+
+// Supabase credentials
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// TypeScript interface for form errors
 interface FormErrors {
   email?: string;
   name?: string;
@@ -35,17 +36,14 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetCooldown, setResetCooldown] = useState(0);
   const [errors, setErrors] = useState<FormErrors>({});
 
-  // --- NEW TOAST STATE ---
+  // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
-  const toastAnim = useRef(new Animated.Value(-100)).current; // Start off-screen
-  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // --- END TOAST STATE ---
+  const [toastVisible, setToastVisible] = useState(false);
 
   // Cooldown timer for password reset
   useEffect(() => {
@@ -55,67 +53,42 @@ export default function AuthScreen() {
     }
   }, [resetCooldown]);
 
-  // --- NEW TOAST FUNCTION ---
+  // Toast function
   const showToast = (message: string, type: 'success' | 'error') => {
-    // If a toast is already shown, clear its timeout
-    if (toastTimeout.current) {
-      clearTimeout(toastTimeout.current);
-    }
-
     setToastMessage(message);
     setToastType(type);
-
-    // Animate in
-    Animated.timing(toastAnim, {
-      toValue: 50, // Slide down to just below the status bar
-      duration: 300,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-
-    // Set timeout to hide
-    toastTimeout.current = setTimeout(() => {
-      Animated.timing(toastAnim, {
-        toValue: -100, // Slide back up
-        duration: 300,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: true,
-      }).start(() => {
-        setToastMessage(null); // Clear message after animation
-      });
-    }, 3000); // Show for 3 seconds
+    setToastVisible(true);
   };
-  // --- END TOAST FUNCTION ---
 
-  // Validation
+  // Hide toast callback
+  const handleToastHide = () => {
+    setToastVisible(false);
+    setToastMessage(null);
+  };
+
+  // FormValidation
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   const validateForm = () => {
     const newErrors: FormErrors = {};
-
     if (!email.trim()) newErrors.email = 'Email is required';
     else if (!validateEmail(email)) newErrors.email = 'Invalid email address';
-
     if (mode === 'signup') {
       if (!name.trim()) newErrors.name = 'Name is required';
       else if (name.trim().length < 2) newErrors.name = 'Name must be at least 2 characters';
     }
-
     if (mode !== 'forgot-password') {
       if (!password) newErrors.password = 'Password is required';
       else if (mode === 'signup' && password.length < 6)
         newErrors.password = 'Password must be at least 6 characters';
     }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Auth functions
   const handleSignIn = async () => {
     if (!validateForm()) return;
     setLoading(true);
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -123,17 +96,15 @@ export default function AuthScreen() {
       });
 
       if (error) {
-        showToast(error.message, 'error'); // Replaced Alert
+        showToast(error.message, 'error');
         return;
       }
-
-      showToast('Welcome back!', 'success'); // Replaced Alert
+      showToast('Welcome back!', 'success');
       router.replace('/home' as Href);
       console.log('Signed in user:', data.user);
-
     } catch (err) {
       console.error('Sign in error:', err);
-      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
+      showToast('An error occurred. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -142,7 +113,6 @@ export default function AuthScreen() {
   const handleSignUp = async () => {
     if (!validateForm()) return;
     setLoading(true);
-
     try {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
@@ -153,20 +123,18 @@ export default function AuthScreen() {
       });
 
       if (error) {
-        showToast(error.message, 'error'); // Replaced Alert
+        showToast(error.message, 'error');
         return;
       }
-
-      showToast('Account created! Check your email to confirm.', 'success'); // Replaced Alert
+      showToast('Account created! Check your email to confirm.', 'success');
       setName('');
       setEmail('');
       setPassword('');
       router.replace('/home' as Href);
       console.log('Signed up user:', data.user);
-
     } catch (err) {
       console.error('Sign up error:', err);
-      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
+      showToast('An error occurred. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -175,23 +143,21 @@ export default function AuthScreen() {
   const handleForgotPassword = async () => {
     if (!validateForm()) return;
     setLoading(true);
-
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: 'skipzy://reset-password',
       });
 
       if (error) {
-        showToast(error.message, 'error'); // Replaced Alert
+        showToast(error.message, 'error');
         return;
       }
-
-      showToast('Password reset link sent! Check your email.', 'success'); // Replaced Alert
+      showToast('Password reset link sent! Check your email.', 'success');
       setResetCooldown(60);
       setEmail('');
     } catch (err) {
       console.error('Password reset error:', err);
-      showToast('An error occurred. Please try again.', 'error'); // Replaced Alert
+      showToast('An error occurred. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -203,7 +169,6 @@ export default function AuthScreen() {
     return handleForgotPassword();
   };
 
-  // Dynamic title
   const getTitle = () => {
     if (mode === 'signin') return { main: 'Welcome Back!', sub: "Oh, you're back? Makes sense" };
     if (mode === 'signup') return { main: 'Welcome to SKIPZY', sub: 'Attendance matters, but so do you' };
@@ -214,22 +179,12 @@ export default function AuthScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      {/* --- NEW TOAST COMPONENT RENDER --- */}
-      {toastMessage && (
-        <Animated.View style={[
-          styles.toastContainer,
-          { transform: [{ translateY: toastAnim }] },
-          toastType === 'error' ? styles.toastError : styles.toastSuccess
-        ]}>
-          <Ionicons
-            name={toastType === 'error' ? 'alert-circle' : 'checkmark-circle'}
-            size={22}
-            color="#ffffff"
-          />
-          <Text style={styles.toastText}>{toastMessage}</Text>
-        </Animated.View>
-      )}
-      {/* --- END TOAST COMPONENT RENDER --- */}
+      <Toast
+        message={toastMessage}
+        type={toastType}
+        visible={toastVisible}
+        onHide={handleToastHide}
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
@@ -242,96 +197,71 @@ export default function AuthScreen() {
 
           <View style={styles.form}>
             {mode === 'signup' && (
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  placeholder="Name"
-                  placeholderTextColor="#999"
-                  value={name}
-                  onChangeText={setName}
-                  style={styles.input}
-                  autoCapitalize="words"
-                />
-                {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-              </View>
-            )}
-
-            <View style={styles.inputWrapper}>
-              <TextInput
-                placeholder="E-mail Id"
-                placeholderTextColor="#999"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
+              <FormInput
+                placeholder="Name"
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                error={errors.name}
                 style={styles.input}
               />
-              {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-            </View>
+            )}
+
+            <FormInput
+              placeholder="E-mail Id"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              error={errors.email}
+              style={styles.input}
+            />
 
             {mode !== 'forgot-password' && (
-              <View style={styles.inputWrapper}>
-                <View style={styles.passwordContainer}>
-                  <TextInput
-                    placeholder="Password"
-                    placeholderTextColor="#999"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    style={[styles.input, styles.passwordInput]}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon} activeOpacity={0.7}>
-                    <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color="#999" />
-                  </TouchableOpacity>
-                </View>
-                {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-              </View>
+              <PasswordInput
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                error={errors.password}
+                style={styles.input}
+              />
             )}
 
             {mode === 'signin' && (
-              <TouchableOpacity onPress={() => setMode('forgot-password')} style={styles.forgotPassword}>
-                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-              </TouchableOpacity>
+              <View style={styles.forgotPassword}>
+                <Text
+                  style={styles.forgotPasswordText}
+                  onPress={() => setMode('forgot-password')}
+                >
+                  Forgot Password?
+                </Text>
+              </View>
             )}
 
-            <TouchableOpacity
+            <AuthButton
               onPress={handleSubmit}
+              title={
+                resetCooldown > 0
+                  ? `Wait ${resetCooldown}s`
+                  : mode === 'signin'
+                  ? 'Sign In'
+                  : mode === 'signup'
+                  ? 'Sign Up'
+                  : 'Send Reset Link'
+              }
+              loading={loading}
               disabled={loading || resetCooldown > 0}
-              style={[styles.button, (loading || resetCooldown > 0) && styles.buttonDisabled]}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {resetCooldown > 0
-                    ? `Wait ${resetCooldown}s`
-                    : mode === 'signin'
-                    ? 'Sign In'
-                    : mode === 'signup'
-                    ? 'Sign Up'
-                    : 'Send Reset Link'}
-                </Text>
-              )}
-            </TouchableOpacity>
+              style={styles.button}
+            />
 
-            <Text style={styles.switchText}>
-              {mode === 'signin'
-                ? `Don't have an account? `
-                : mode === 'signup'
-                ? `Already have an account? `
-                : `Remember your password? `}
-              <Text
-                onPress={() => {
-                  setMode(mode === 'signin' ? 'signup' : 'signin');
-                  setErrors({});
-                }}
-                style={styles.switchLink}
-              >
-                {mode === 'signin' ? 'Sign Up' : 'Sign In'}
-              </Text>
-            </Text>
+            <AuthSwitchLink
+              mode={mode}
+              onSwitch={(target) => {
+                setMode(target);
+                setErrors({});
+              }}
+            />
           </View>
         </View>
 
@@ -341,7 +271,6 @@ export default function AuthScreen() {
   );
 }
 
-// Full TS-safe styles
 const styles = StyleSheet.create<Record<string, any>>({
   container: { flex: 1, backgroundColor: '#000' },
   scrollContent: { flexGrow: 1, justifyContent: 'space-between', padding: 32 },
@@ -383,36 +312,5 @@ const styles = StyleSheet.create<Record<string, any>>({
   switchText: { textAlign: 'center', color: '#999', fontSize: 14 },
   switchLink: { color: '#8b5cf6', fontWeight: '500' },
   footer: { color: '#999', fontSize: 14, textAlign: 'center', marginTop: 32 },
-
-  // --- NEW TOAST STYLES ---
-  toastContainer: {
-    position: 'absolute',
-    top: 0, // Animated `translateY` will push it down
-    left: 20,
-    right: 20,
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 1000,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  toastSuccess: {
-    backgroundColor: '#10b981', // Green
-  },
-  toastError: {
-    backgroundColor: '#ef4444', // Red
-  },
-  toastText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-  },
-  // --- END TOAST STYLES ---
 });
+
