@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'; // Added useRef
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,54 +8,19 @@ import {
   StatusBar,
   Modal,
   TextInput,
-  // Alert, // We are removing Alert
-  Animated, // Added Animated
-  Easing, // Added Easing
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
+import { useSubjects } from '@/contexts/SubjectsContext';
 import { Subject } from '@/types/subjects';
+import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 
 export default function SubjectsScreen() {
   const router = useRouter();
-  const [subjects, setSubjects] = useState<Subject[]>([
-    {
-      id: 1,
-      name: 'Oral Pathology',
-      staffName: 'Dr. Kumar',
-      minAttendance: 75,
-      days: ['Mon', 'Wed', 'Fri'],
-      timeSlot: '7:45 AM',
-      classType: 'Lecture',
-      history: [
-        { date: '2025-10-02', status: 'Present' },
-        { date: '2025-10-04', status: 'Absent' },
-        { date: '2025-10-09', status: 'Present' },
-      ],
-    },
-    {
-      id: 2,
-      name: 'Crown & Bridge',
-      staffName: 'Dr. Sharma',
-      minAttendance: 75,
-      days: ['Tue', 'Thu'],
-      timeSlot: '9:00 AM',
-      classType: 'Lab',
-      history: [],
-    },
-    {
-      id: 3,
-      name: 'Prosthodontics',
-      staffName: 'Dr. Patel',
-      minAttendance: 75,
-      days: ['Mon', 'Tue', 'Thu'],
-      timeSlot: '11:00 AM',
-      classType: 'Lecture',
-      history: [],
-    },
-  ]);
-
+  const { subjects, addSubject } = useSubjects();
   const [modalVisible, setModalVisible] = useState(false);
   const [newSubject, setNewSubject] = useState({
     name: '',
@@ -66,16 +31,17 @@ export default function SubjectsScreen() {
     classType: 'Lecture' as 'Lecture' | 'Lab' | 'OPD',
   });
 
-  // --- NEW TOAST STATE ---
+  // Quick mark state
+  const [quickMarkVisible, setQuickMarkVisible] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+
+  // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
-  const toastAnim = useRef(new Animated.Value(-100)).current; // Start off-screen
+  const toastAnim = useRef(new Animated.Value(-100)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // --- END TOAST STATE ---
 
-  // --- NEW TOAST FUNCTION ---
   const showToast = (message: string, type: 'success' | 'error') => {
-    // If a toast is already shown, clear its timeout
     if (toastTimeout.current) {
       clearTimeout(toastTimeout.current);
     }
@@ -83,27 +49,24 @@ export default function SubjectsScreen() {
     setToastMessage(message);
     setToastType(type);
 
-    // Animate in
     Animated.timing(toastAnim, {
-      toValue: 50, // Slide down to just below the status bar
+      toValue: 50,
       duration: 300,
       easing: Easing.out(Easing.ease),
       useNativeDriver: true,
     }).start();
 
-    // Set timeout to hide
     toastTimeout.current = setTimeout(() => {
       Animated.timing(toastAnim, {
-        toValue: -100, // Slide back up
+        toValue: -100,
         duration: 300,
         easing: Easing.in(Easing.ease),
         useNativeDriver: true,
       }).start(() => {
-        setToastMessage(null); // Clear message after animation
+        setToastMessage(null);
       });
-    }, 3000); // Show for 3 seconds
+    }, 3000);
   };
-  // --- END TOAST FUNCTION ---
 
   const getStats = (history: any[]) => {
     const attended = history.filter(h => h.status === 'Present' || h.status === 'On Duty').length;
@@ -128,6 +91,19 @@ export default function SubjectsScreen() {
     return { text: '#f59e0b', ring: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
   };
 
+  const handleQuickMark = (subject: Subject, e: any) => {
+    e.stopPropagation();
+    setSelectedSubject(subject);
+    setQuickMarkVisible(true);
+  };
+
+  const handleCardPress = (subject: Subject) => {
+    router.push({
+      pathname: '/subject-detail',
+      params: { subjectId: subject.id }
+    });
+  };
+
   const renderSubjectCard = (subject: Subject) => {
     const { attended, total } = getStats(subject.history);
     const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
@@ -139,88 +115,95 @@ export default function SubjectsScreen() {
     const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
     return (
-      <TouchableOpacity
-        key={subject.id}
-        style={styles.subjectCard}
-        onPress={() => router.push({
-          pathname: '/subject-detail',
-          params: { subjectId: subject.id }
-        })}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardTitleSection}>
-            <View style={styles.cardTitleRow}>
-              <Text style={styles.subjectName}>{subject.name}</Text>
-              <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+      <View key={subject.id} style={styles.subjectCard}>
+        <TouchableOpacity
+          style={styles.cardPressable}
+          onPress={() => handleCardPress(subject)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleSection}>
+              <View style={styles.cardTitleRow}>
+                <Text style={styles.subjectName}>{subject.name}</Text>
+                <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+              </View>
+              <View style={styles.subjectMeta}>
+                <Ionicons name="book-outline" size={14} color="#6b7280" />
+                <Text style={styles.metaText}>{subject.classType}</Text>
+                <Text style={styles.metaDivider}>•</Text>
+                <Ionicons name="person-outline" size={14} color="#6b7280" />
+                <Text style={styles.metaText}>{subject.staffName}</Text>
+              </View>
             </View>
-            <View style={styles.subjectMeta}>
-              <Ionicons name="book-outline" size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{subject.classType}</Text>
-              <Text style={styles.metaDivider}>•</Text>
-              <Ionicons name="person-outline" size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{subject.staffName}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.progressRing}>
-            <Svg width={64} height={64}>
-              <Circle
-                cx="32"
-                cy="32"
-                r={radius}
-                stroke="#2a2a2a"
-                strokeWidth="4"
-                fill="transparent"
-              />
-              <Circle
-                cx="32"
-                cy="32"
-                r={radius}
-                stroke={colors.ring}
-                strokeWidth="4"
-                fill="transparent"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-                rotation="-90"
-                origin="32, 32"
-              />
-            </Svg>
-            <View style={styles.progressText}>
-              <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
+            
+            <View style={styles.progressRing}>
+              <Svg width={64} height={64}>
+                <Circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  stroke="#2a2a2a"
+                  strokeWidth="4"
+                  fill="transparent"
+                />
+                <Circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  stroke={colors.ring}
+                  strokeWidth="4"
+                  fill="transparent"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  rotation="-90"
+                  origin="32, 32"
+                />
+              </Svg>
+              <View style={styles.progressText}>
+                <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Attended</Text>
-            <Text style={styles.statValue}>{attended}/{total}</Text>
+          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Attended</Text>
+              <Text style={styles.statValue}>{attended}/{total}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Can Skip</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Target</Text>
+              <Text style={styles.statValue}>{subject.minAttendance}%</Text>
+            </View>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Can Skip</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Target</Text>
-            <Text style={styles.statValue}>{subject.minAttendance}%</Text>
-          </View>
-        </View>
 
-        <View style={styles.scheduleRow}>
-          <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-          <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
-        </View>
-      </TouchableOpacity>
+          <View style={styles.scheduleRow}>
+            <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+            <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Quick Mark Button */}
+        <TouchableOpacity
+          style={styles.quickMarkBtn}
+          onPress={(e) => handleQuickMark(subject, e)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+          <Text style={styles.quickMarkText}>Quick Mark</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
   const handleAddSubject = () => {
     if (!newSubject.name.trim() || !newSubject.staffName.trim()) {
-      // --- MODIFIED: Show custom toast instead of Alert ---
       showToast('Please fill in all required fields', 'error');
       return;
     }
@@ -236,7 +219,7 @@ export default function SubjectsScreen() {
       history: [],
     };
 
-    setSubjects([...subjects, subject]);
+    addSubject(subject);
     setModalVisible(false);
     setNewSubject({
       name: '',
@@ -247,7 +230,6 @@ export default function SubjectsScreen() {
       classType: 'Lecture',
     });
     
-    // --- ADDED: Success toast ---
     showToast('Subject added successfully!', 'success');
   };
 
@@ -264,7 +246,7 @@ export default function SubjectsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
       
-      {/* --- NEW TOAST COMPONENT RENDER --- */}
+      {/* Toast */}
       {toastMessage && (
         <Animated.View style={[
           styles.toastContainer,
@@ -279,14 +261,12 @@ export default function SubjectsScreen() {
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       )}
-      {/* --- END TOAST COMPONENT RENDER --- */}
 
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>My Subjects</Text>
           <Text style={styles.subtitle}>Track attendance for all your subjects</Text>
         </View>
-        {/* Settings Icon Removed */}
       </View>
 
       <ScrollView 
@@ -426,6 +406,19 @@ export default function SubjectsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Quick Mark Bottom Sheet */}
+      <QuickMarkBottomSheet
+        visible={quickMarkVisible}
+        subject={selectedSubject}
+        onClose={() => {
+          setQuickMarkVisible(false);
+          setSelectedSubject(null);
+        }}
+        onSuccess={() => {
+          showToast('Attendance marked successfully!', 'success');
+        }}
+      />
     </View>
   );
 }
@@ -435,10 +428,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0a0a',
   },
-  // --- NEW TOAST STYLES ---
   toastContainer: {
     position: 'absolute',
-    top: 0, // Animated `translateY` will push it down
+    top: 0,
     left: 20,
     right: 20,
     padding: 16,
@@ -454,10 +446,10 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   toastSuccess: {
-    backgroundColor: '#10b981', // Green
+    backgroundColor: '#10b981',
   },
   toastError: {
-    backgroundColor: '#ef4444', // Red
+    backgroundColor: '#ef4444',
   },
   toastText: {
     color: '#ffffff',
@@ -465,7 +457,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
-  // --- END TOAST STYLES ---
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -484,7 +475,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
   },
-  // --- settingsBtn style removed ---
   scrollView: {
     flex: 1,
   },
@@ -494,10 +484,13 @@ const styles = StyleSheet.create({
   subjectCard: {
     backgroundColor: '#1a1a1a',
     borderRadius: 16,
-    padding: 16,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#262626',
+    overflow: 'hidden',
+  },
+  cardPressable: {
+    padding: 16,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -582,6 +575,21 @@ const styles = StyleSheet.create({
   scheduleText: {
     fontSize: 13,
     color: '#6b7280',
+  },
+  quickMarkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#8b5cf6',
+    padding: 14,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  quickMarkText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   fab: {
     position: 'absolute',

@@ -10,8 +10,10 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
+import { useSubjects } from '@/contexts/SubjectsContext';
+import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
+import { Subject } from '@/types/subjects';
 
 const { width } = Dimensions.get('window');
 
@@ -50,23 +52,43 @@ const timeTable: Record<string, Array<{ name: string; time: string; icon: string
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const HomeScreen = () => {
+  const { subjects } = useSubjects();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [progressAnim] = useState(new Animated.Value(0));
   const [percentageAnim] = useState(new Animated.Value(0));
-  const [percentageText, setPercentageText] = useState('0'); // <-- ADDED
+  const [percentageText, setPercentageText] = useState('0');
+  const [quickMarkVisible, setQuickMarkVisible] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const targetPercentage = 75;
+
+  // Calculate overall attendance from all subjects
+  const calculateOverallAttendance = () => {
+    let totalAttended = 0;
+    let totalClasses = 0;
+
+    subjects.forEach(subject => {
+      const attended = subject.history.filter(
+        h => h.status === 'Present' || h.status === 'On Duty'
+      ).length;
+      const total = subject.history.filter(
+        h => h.status === 'Present' || h.status === 'Absent'
+      ).length;
+      
+      totalAttended += attended;
+      totalClasses += total;
+    });
+
+    return totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 100) : 0;
+  };
+
+  const targetPercentage = calculateOverallAttendance();
 
   useEffect(() => {
-    // <-- CHANGED (This whole block is updated)
-    // Add a listener to the JS-driven animation
     const listenerId = percentageAnim.addListener(({ value }) => {
-      // Round the value and set it as a string in our new state
       setPercentageText(Math.round(value).toString());
     });
 
-    // Start the parallel animations
     Animated.parallel([
       Animated.timing(progressAnim, {
         toValue: targetPercentage,
@@ -76,15 +98,14 @@ const HomeScreen = () => {
       Animated.timing(percentageAnim, {
         toValue: targetPercentage,
         duration: 1500,
-        useNativeDriver: false, // This must be false to run on the JS thread
+        useNativeDriver: false,
       }),
     ]).start();
 
-    // Cleanup: remove the listener when the component unmounts
     return () => {
       percentageAnim.removeListener(listenerId);
     };
-  }, [percentageAnim, targetPercentage]); // Added dependencies
+  }, [targetPercentage]);
 
   const radius = 50;
   const strokeWidth = 8;
@@ -127,9 +148,48 @@ const HomeScreen = () => {
     return timeTable[dayName] || [];
   };
 
+  const handleScheduleItemPress = (item: any) => {
+    // Find matching subject
+    const subject = subjects.find(s => 
+      s.name.toLowerCase().includes(item.name.toLowerCase()) || 
+      item.name.toLowerCase().includes(s.name.toLowerCase())
+    );
+    
+    if (subject) {
+      setSelectedSubject(subject);
+      setQuickMarkVisible(true);
+    }
+  };
+
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const schedule = getScheduleForDate(selectedDate);
+
+  // Calculate total classes attended
+  const totalClassesAttended = subjects.reduce((acc, subject) => {
+    return acc + subject.history.filter(h => h.status === 'Present' || h.status === 'On Duty').length;
+  }, 0);
+
+  // Calculate safe to skip
+  const calculateSafeToSkip = () => {
+    let totalSafe = 0;
+    subjects.forEach(subject => {
+      const attended = subject.history.filter(
+        h => h.status === 'Present' || h.status === 'On Duty'
+      ).length;
+      const total = subject.history.filter(
+        h => h.status === 'Present' || h.status === 'Absent'
+      ).length;
+      
+      if (total > 0) {
+        const minRequired = Math.ceil((subject.minAttendance / 100) * total);
+        const maxSkips = total - minRequired;
+        const skipsUsed = total - attended;
+        totalSafe += Math.max(0, maxSkips - skipsUsed);
+      }
+    });
+    return totalSafe;
+  };
 
   return (
     <View style={styles.container}>
@@ -151,7 +211,7 @@ const HomeScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Stats Card with Gradient */}
+        {/* Stats Card */}
         <View style={styles.statsCard}>
           <View style={styles.statsCardInner}>
             {/* Circular Progress */}
@@ -181,7 +241,6 @@ const HomeScreen = () => {
                   />
                 </Svg>
                 <View style={styles.progressTextContainer}>
-                  {/* <-- CHANGED (This block is updated) */}
                   <Animated.Text style={styles.progressPercentage}>
                     {percentageText}
                     <Text style={styles.percentSymbol}>%</Text>
@@ -198,7 +257,7 @@ const HomeScreen = () => {
                   <Ionicons name="checkmark-circle" size={24} color="#10b981" />
                 </View>
                 <View style={styles.statTextContainer}>
-                  <Text style={styles.statNumber}>124</Text>
+                  <Text style={styles.statNumber}>{totalClassesAttended}</Text>
                   <Text style={styles.statLabel}>Classes Attended</Text>
                 </View>
               </View>
@@ -208,7 +267,7 @@ const HomeScreen = () => {
                   <Ionicons name="shield-checkmark" size={24} color="#3b82f6" />
                 </View>
                 <View style={styles.statTextContainer}>
-                  <Text style={styles.statNumber}>5</Text>
+                  <Text style={styles.statNumber}>{calculateSafeToSkip()}</Text>
                   <Text style={styles.statLabel}>Safe to Skip</Text>
                 </View>
               </View>
@@ -274,6 +333,7 @@ const HomeScreen = () => {
                   key={index} 
                   style={styles.scheduleCard}
                   activeOpacity={0.7}
+                  onPress={() => handleScheduleItemPress(item)}
                 >
                   <View style={styles.scheduleLeft}>
                     <View style={styles.scheduleIconContainer}>
@@ -287,7 +347,10 @@ const HomeScreen = () => {
                       </View>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#4b5563" />
+                  <View style={styles.markAttendanceBtn}>
+                    <Ionicons name="checkmark-circle-outline" size={20} color="#8b5cf6" />
+                    <Text style={styles.markAttendanceText}>Mark</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -296,6 +359,19 @@ const HomeScreen = () => {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* Quick Mark Bottom Sheet */}
+      <QuickMarkBottomSheet
+        visible={quickMarkVisible}
+        subject={selectedSubject}
+        onClose={() => {
+          setQuickMarkVisible(false);
+          setSelectedSubject(null);
+        }}
+        onSuccess={() => {
+          // Stats will automatically update from context
+        }}
+      />
     </View>
   );
 };
@@ -534,6 +610,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     fontWeight: '500',
+  },
+  markAttendanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  markAttendanceText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8b5cf6',
   },
   noClassesContainer: {
     paddingVertical: 48,
