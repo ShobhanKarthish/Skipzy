@@ -459,12 +459,7 @@ const styles = StyleSheet.create({
   historyIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   historyStatus: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
   historyDate: { fontSize: 13, color: '#6b7280' },
-  // --- BOTTOM SUMMARY STYLES REMOVED ---
-  // bottomSummary: { ... },
-  // summaryBox: { ... },
-  // summaryDivider: { ... },
-  // summaryNumber: { ... },
-  // summaryLabel: { ... },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#222', borderRadius: 16, padding: 24, width: '90%', alignItems: 'center' },
   modalTitle: { color: '#fff', fontWeight: '700', fontSize: 18, marginBottom: 20 },

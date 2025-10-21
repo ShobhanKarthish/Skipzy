@@ -13,13 +13,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
-import { useRouter } from 'expo-router';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { Subject } from '@/types/subjects';
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 
 export default function SubjectsScreen() {
-  const router = useRouter();
   const { subjects, addSubject } = useSubjects();
   const [modalVisible, setModalVisible] = useState(false);
   const [newSubject, setNewSubject] = useState({
@@ -91,17 +89,9 @@ export default function SubjectsScreen() {
     return { text: '#f59e0b', ring: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
   };
 
-  const handleQuickMark = (subject: Subject, e: any) => {
-    e.stopPropagation();
+  const handleQuickMark = (subject: Subject) => {
     setSelectedSubject(subject);
     setQuickMarkVisible(true);
-  };
-
-  const handleCardPress = (subject: Subject) => {
-    router.push({
-      pathname: '/subject-detail',
-      params: { subjectId: subject.id }
-    });
   };
 
   const renderSubjectCard = (subject: Subject) => {
@@ -116,17 +106,10 @@ export default function SubjectsScreen() {
 
     return (
       <View key={subject.id} style={styles.subjectCard}>
-        <TouchableOpacity
-          style={styles.cardPressable}
-          onPress={() => handleCardPress(subject)}
-          activeOpacity={0.7}
-        >
+        <View style={styles.cardContent}>
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleSection}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.subjectName}>{subject.name}</Text>
-                <Ionicons name="chevron-forward" size={20} color="#6b7280" />
-              </View>
+              <Text style={styles.subjectName}>{subject.name}</Text>
               <View style={styles.subjectMeta}>
                 <Ionicons name="book-outline" size={14} color="#6b7280" />
                 <Text style={styles.metaText}>{subject.classType}</Text>
@@ -187,12 +170,12 @@ export default function SubjectsScreen() {
             <Ionicons name="calendar-outline" size={16} color="#6b7280" />
             <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
           </View>
-        </TouchableOpacity>
+        </View>
 
         {/* Quick Mark Button */}
         <TouchableOpacity
           style={styles.quickMarkBtn}
-          onPress={(e) => handleQuickMark(subject, e)}
+          onPress={() => handleQuickMark(subject)}
           activeOpacity={0.8}
         >
           <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
@@ -489,7 +472,7 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
     overflow: 'hidden',
   },
-  cardPressable: {
+  cardContent: {
     padding: 16,
   },
   cardHeader: {
@@ -501,16 +484,11 @@ const styles = StyleSheet.create({
   cardTitleSection: {
     flex: 1,
   },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   subjectName: {
     fontSize: 18,
     fontWeight: '600',
     color: '#ffffff',
-    flex: 1,
+    marginBottom: 8,
   },
   subjectMeta: {
     flexDirection: 'row',
