@@ -16,10 +16,12 @@ import Svg, { Circle } from 'react-native-svg';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { Subject } from '@/types/subjects';
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
+import { useRouter } from 'expo-router';
 
 export default function SubjectsScreen() {
   const { subjects, addSubject } = useSubjects();
   const [modalVisible, setModalVisible] = useState(false);
+  const router = useRouter();
   const [newSubject, setNewSubject] = useState({
     name: '',
     staffName: '',
@@ -95,95 +97,112 @@ export default function SubjectsScreen() {
   };
 
   const renderSubjectCard = (subject: Subject) => {
-    const { attended, total } = getStats(subject.history);
-    const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
-    const safeToSkip = calculateSafeToSkip(subject);
-    const colors = getStatusColor(percentage, subject.minAttendance, safeToSkip);
+  const { attended, total } = getStats(subject.history);
+  const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+  const safeToSkip = calculateSafeToSkip(subject);
+  const colors = getStatusColor(percentage, subject.minAttendance, safeToSkip);
 
-    const radius = 28;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
-    return (
-      <View key={subject.id} style={styles.subjectCard}>
-        <View style={styles.cardContent}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardTitleSection}>
-              <Text style={styles.subjectName}>{subject.name}</Text>
-              <View style={styles.subjectMeta}>
-                <Ionicons name="book-outline" size={14} color="#6b7280" />
-                <Text style={styles.metaText}>{subject.classType}</Text>
-                <Text style={styles.metaDivider}>•</Text>
-                <Ionicons name="person-outline" size={14} color="#6b7280" />
-                <Text style={styles.metaText}>{subject.staffName}</Text>
-              </View>
-            </View>
-            
-            <View style={styles.progressRing}>
-              <Svg width={64} height={64}>
-                <Circle
-                  cx="32"
-                  cy="32"
-                  r={radius}
-                  stroke="#2a2a2a"
-                  strokeWidth="4"
-                  fill="transparent"
-                />
-                <Circle
-                  cx="32"
-                  cy="32"
-                  r={radius}
-                  stroke={colors.ring}
-                  strokeWidth="4"
-                  fill="transparent"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  rotation="-90"
-                  origin="32, 32"
-                />
-              </Svg>
-              <View style={styles.progressText}>
-                <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
-              </View>
+  return (
+    <View key={subject.id} style={styles.subjectCard}>
+      <View style={styles.cardContent}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleSection}>
+            <Text style={styles.subjectName}>{subject.name}</Text>
+            <View style={styles.subjectMeta}>
+              <Ionicons name="book-outline" size={14} color="#6b7280" />
+              <Text style={styles.metaText}>{subject.classType}</Text>
+              <Text style={styles.metaDivider}>•</Text>
+              <Ionicons name="person-outline" size={14} color="#6b7280" />
+              <Text style={styles.metaText}>{subject.staffName}</Text>
             </View>
           </View>
-
-          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Attended</Text>
-              <Text style={styles.statValue}>{attended}/{total}</Text>
+          
+          <View style={styles.progressRing}>
+            <Svg width={64} height={64}>
+              <Circle
+                cx="32"
+                cy="32"
+                r={radius}
+                stroke="#2a2a2a"
+                strokeWidth="4"
+                fill="transparent"
+              />
+              <Circle
+                cx="32"
+                cy="32"
+                r={radius}
+                stroke={colors.ring}
+                strokeWidth="4"
+                fill="transparent"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                rotation="-90"
+                origin="32, 32"
+              />
+            </Svg>
+            <View style={styles.progressText}>
+              <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Can Skip</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Target</Text>
-              <Text style={styles.statValue}>{subject.minAttendance}%</Text>
-            </View>
-          </View>
-
-          <View style={styles.scheduleRow}>
-            <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-            <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
           </View>
         </View>
 
+        <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Attended</Text>
+            <Text style={styles.statValue}>{attended}/{total}</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Can Skip</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Target</Text>
+            <Text style={styles.statValue}>{subject.minAttendance}%</Text>
+          </View>
+        </View>
+
+        <View style={styles.scheduleRow}>
+          <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+          <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
+        </View>
+      </View>
+
+      {/* Action Buttons Row */}
+      <View style={styles.actionButtonsRow}>
         {/* Quick Mark Button */}
         <TouchableOpacity
-          style={styles.quickMarkBtn}
+          style={styles.quickMarkBtnHalf}
           onPress={() => handleQuickMark(subject)}
           activeOpacity={0.8}
         >
           <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
           <Text style={styles.quickMarkText}>Quick Mark</Text>
         </TouchableOpacity>
+
+        {/* View History Button */}
+        <TouchableOpacity
+          style={styles.historyBtnHalf}
+          onPress={() => router.push({
+            pathname: '/history',
+            params: { subjectId: subject.id }
+          })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="time-outline" size={20} color="#8b5cf6" />
+          <Text style={styles.historyText}>History</Text>
+        </TouchableOpacity>
       </View>
-    );
-  };
+    </View>
+  );
+};
+
 
   const handleAddSubject = () => {
     if (!newSubject.name.trim() || !newSubject.staffName.trim()) {
@@ -554,7 +573,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
   },
-  quickMarkBtn: {
+  // NEW STYLES - Action Buttons Row
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 1,
+  },
+  quickMarkBtnHalf: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -562,6 +587,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
     padding: 14,
     borderBottomLeftRadius: 16,
+  },
+  historyBtnHalf: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    padding: 14,
     borderBottomRightRadius: 16,
   },
   quickMarkText: {
@@ -569,6 +603,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  historyText: {
+    color: '#8b5cf6',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  // END NEW STYLES
   fab: {
     position: 'absolute',
     bottom: 100,
