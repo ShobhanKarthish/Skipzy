@@ -174,31 +174,15 @@ export default function SubjectsScreen() {
         </View>
       </View>
 
-      {/* Action Buttons Row */}
-      <View style={styles.actionButtonsRow}>
-        {/* Quick Mark Button */}
-        <TouchableOpacity
-          style={styles.quickMarkBtnHalf}
-          onPress={() => handleQuickMark(subject)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-          <Text style={styles.quickMarkText}>Quick Mark</Text>
-        </TouchableOpacity>
-
-        {/* View History Button */}
-        <TouchableOpacity
-          style={styles.historyBtnHalf}
-          onPress={() => router.push({
-            pathname: '/history',
-            params: { subjectId: subject.id }
-          })}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="time-outline" size={20} color="#8b5cf6" />
-          <Text style={styles.historyText}>History</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Quick Mark Button - Full Width */}
+      <TouchableOpacity
+        style={styles.quickMarkBtnFull}
+        onPress={() => handleQuickMark(subject)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+        <Text style={styles.quickMarkText}>Quick Mark</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -573,13 +557,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
   },
-  // NEW STYLES - Action Buttons Row
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: 1,
-  },
-  quickMarkBtnHalf: {
-    flex: 1,
+
+  quickMarkBtnFull: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -587,24 +566,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
     padding: 14,
     borderBottomLeftRadius: 16,
-  },
-  historyBtnHalf: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    padding: 14,
     borderBottomRightRadius: 16,
   },
   quickMarkText: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  historyText: {
-    color: '#8b5cf6',
     fontSize: 15,
     fontWeight: '700',
   },
