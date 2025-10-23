@@ -105,7 +105,7 @@ const HomeScreen = () => {
     return () => {
       percentageAnim.removeListener(listenerId);
     };
-  }, [targetPercentage]);
+  }, [targetPercentage, subjects]); // Add subjects dependency to re-animate on change
 
   const radius = 50;
   const strokeWidth = 8;
@@ -164,6 +164,7 @@ const HomeScreen = () => {
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const schedule = getScheduleForDate(selectedDate);
+  const selectedDateKey = selectedDate.toDateString(); // For efficient checking
 
   // Calculate total classes attended
   const totalClassesAttended = subjects.reduce((acc, subject) => {
@@ -328,31 +329,59 @@ const HomeScreen = () => {
             </View>
           ) : (
             <View style={styles.scheduleList}>
-              {schedule.map((item, index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.scheduleCard}
-                  activeOpacity={0.7}
-                  onPress={() => handleScheduleItemPress(item)}
-                >
-                  <View style={styles.scheduleLeft}>
-                    <View style={styles.scheduleIconContainer}>
-                      <Ionicons name={item.icon as any} size={22} color="#8b5cf6" />
-                    </View>
-                    <View style={styles.scheduleContent}>
-                      <Text style={styles.scheduleName}>{item.name}</Text>
-                      <View style={styles.scheduleTimeContainer}>
-                        <Ionicons name="time-outline" size={14} color="#6b7280" />
-                        <Text style={styles.scheduleTime}>{item.time}</Text>
+              {schedule.map((item, index) => {
+                
+                // --- Find matching subject and check if marked for selected date ---
+                const subject = subjects.find(s => 
+                  s.name.toLowerCase().includes(item.name.toLowerCase()) || 
+                  item.name.toLowerCase().includes(s.name.toLowerCase())
+                );
+                
+                let isMarked = false;
+                if (subject) {
+                  isMarked = subject.history.some(
+                    record => new Date(record.date).toDateString() === selectedDateKey
+                  );
+                }
+                // --- End of new logic ---
+
+                return (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={styles.scheduleCard}
+                    activeOpacity={0.7}
+                    onPress={() => handleScheduleItemPress(item)}
+                  >
+                    <View style={styles.scheduleLeft}>
+                      <View style={styles.scheduleIconContainer}>
+                        <Ionicons name={item.icon as any} size={22} color="#8b5cf6" />
+                      </View>
+                      <View style={styles.scheduleContent}>
+                        <Text style={styles.scheduleName}>{item.name}</Text>
+                        <View style={styles.scheduleTimeContainer}>
+                          <Ionicons name="time-outline" size={14} color="#6b7280" />
+                          <Text style={styles.scheduleTime}>{item.time}</Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                  <View style={styles.markAttendanceBtn}>
-                    <Ionicons name="checkmark-circle-outline" size={20} color="#8b5cf6" />
-                    <Text style={styles.markAttendanceText}>Mark</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                    
+                    {/* --- Conditionally render Mark/Marked button --- */}
+                    {isMarked ? (
+                      <View style={[styles.markAttendanceBtn, styles.markAttendanceBtnMarked]}>
+                        <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                        <Text style={[styles.markAttendanceText, styles.markAttendanceTextMarked]}>Marked</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.markAttendanceBtn}>
+                        <Ionicons name="checkmark-circle-outline" size={20} color="#8b5cf6" />
+                        <Text style={styles.markAttendanceText}>Mark</Text>
+                      </View>
+                    )}
+                    {/* --- End of conditional rendering --- */}
+
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </View>
@@ -625,6 +654,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#8b5cf6',
   },
+  // --- New Styles ---
+  markAttendanceBtnMarked: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)', // Green tint
+  },
+  markAttendanceTextMarked: {
+    color: '#10b981', // Green text
+  },
+  // --- End of New Styles ---
   noClassesContainer: {
     paddingVertical: 48,
     alignItems: 'center',
