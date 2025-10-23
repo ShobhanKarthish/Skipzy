@@ -517,5 +517,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#8b5cf6', // Purple text for selected
   },
-  // --- END NEW CUSTOM PICKER STYLES ---
+
 });
