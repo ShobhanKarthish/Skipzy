@@ -1,25 +1,25 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Modal,
-  TextInput,
-  Animated,
-  Easing,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
-import { useSubjects } from '@/contexts/SubjectsContext';
-import { Subject } from '@/types/subjects';
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
+import { useSubjects } from '@/contexts/SubjectsContext';
+import { AppSubject, CreateSubjectData } from '@/types/supabase';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React, { useRef, useState } from 'react';
+import {
+    Animated,
+    Easing,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 export default function SubjectsScreen() {
-  const { subjects, addSubject } = useSubjects();
+  const { subjects, loading, error, addSubject } = useSubjects();
   const [modalVisible, setModalVisible] = useState(false);
   const router = useRouter();
   const [newSubject, setNewSubject] = useState({
@@ -33,7 +33,7 @@ export default function SubjectsScreen() {
 
   // Quick mark state
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -75,7 +75,7 @@ export default function SubjectsScreen() {
     return { attended, total, absent };
   };
 
-  const calculateSafeToSkip = (subject: Subject) => {
+  const calculateSafeToSkip = (subject: AppSubject) => {
     const { attended, total } = getStats(subject.history);
     if (total === 0) return 0;
     
@@ -91,12 +91,12 @@ export default function SubjectsScreen() {
     return { text: '#f59e0b', ring: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
   };
 
-  const handleQuickMark = (subject: Subject) => {
+  const handleQuickMark = (subject: AppSubject) => {
     setSelectedSubject(subject);
     setQuickMarkVisible(true);
   };
 
-  const renderSubjectCard = (subject: Subject) => {
+  const renderSubjectCard = (subject: AppSubject) => {
   const { attended, total } = getStats(subject.history);
   const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
   const safeToSkip = calculateSafeToSkip(subject);
@@ -188,35 +188,36 @@ export default function SubjectsScreen() {
 };
 
 
-  const handleAddSubject = () => {
-    if (!newSubject.name.trim() || !newSubject.staffName.trim()) {
-      showToast('Please fill in all required fields', 'error');
+  const handleAddSubject = async () => {
+    if (!newSubject.name.trim()) {
+      showToast('Please enter a subject name', 'error');
       return;
     }
 
-    const subject: Subject = {
-      id: Date.now(),
-      name: newSubject.name.trim(),
-      staffName: newSubject.staffName.trim(),
-      minAttendance: parseInt(newSubject.minAttendance) || 75,
-      days: newSubject.days,
-      timeSlot: newSubject.timeSlot,
-      classType: newSubject.classType,
-      history: [],
+    const subjectData: CreateSubjectData = {
+      subject_name: newSubject.name.trim(),
+      staff_name: newSubject.staffName.trim() || null,
+      subject_type: newSubject.classType,
+      required_attendance_percentage: parseInt(newSubject.minAttendance) || 75,
+      timetable_slots: [], // For now, empty - can be added later
     };
 
-    addSubject(subject);
-    setModalVisible(false);
-    setNewSubject({
-      name: '',
-      staffName: '',
-      minAttendance: '75',
-      days: [],
-      timeSlot: '',
-      classType: 'Lecture',
-    });
+    const success = await addSubject(subjectData);
     
-    showToast('Subject added successfully!', 'success');
+    if (success) {
+      setModalVisible(false);
+      setNewSubject({
+        name: '',
+        staffName: '',
+        minAttendance: '75',
+        days: [],
+        timeSlot: '',
+        classType: 'Lecture',
+      });
+      showToast('Subject added successfully!', 'success');
+    } else {
+      showToast('Failed to add subject. Please try again.', 'error');
+    }
   };
 
   const toggleDay = (day: string) => {
@@ -227,6 +228,19 @@ export default function SubjectsScreen() {
         : [...prev.days, day]
     }));
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+        <View style={styles.loadingContainer}>
+          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
+          <Text style={styles.loadingText}>Loading subjects...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -255,12 +269,40 @@ export default function SubjectsScreen() {
         </View>
       </View>
 
+      {/* Error State */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={24} color="#ef4444" />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {subjects.map(renderSubjectCard)}
+        {subjects.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="book-outline" size={64} color="#4b5563" />
+            </View>
+            <Text style={styles.emptyTitle}>No Subjects Yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Add your first subject to start tracking attendance
+            </Text>
+            <TouchableOpacity 
+              style={styles.emptyButton}
+              onPress={() => setModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add" size={20} color="#ffffff" />
+              <Text style={styles.emptyButtonText}>Add Subject</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          subjects.map(renderSubjectCard)
+        )}
         <View style={styles.bottomPadding} />
       </ScrollView>
 
@@ -690,6 +732,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+  },
+  loadingText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '500',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: 16,
+    margin: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+    flex: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyIcon: {
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 20,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  emptyButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',

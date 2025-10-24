@@ -1,19 +1,13 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { authService, userService } from '@/lib/supabaseService';
+import { AppUserProfile } from '@/types/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-export interface UserProfile {
-  name: string;
-  course: string;
-  year: string;
-  institution: string;
-  studentId: string;
-  email: string;
-  avatarUri?: string;
-}
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 interface UserProfileContextType {
-  userProfile: UserProfile;
-  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  userProfile: AppUserProfile | null;
+  loading: boolean;
+  error: string | null;
+  updateUserProfile: (updates: Partial<AppUserProfile>) => Promise<boolean>;
   darkMode: boolean;
   toggleDarkMode: () => void;
   notificationsEnabled: boolean;
@@ -21,50 +15,50 @@ interface UserProfileContextType {
   language: string;
   setLanguage: (lang: string) => void;
   resetAllData: () => Promise<void>;
+  refreshUserProfile: () => Promise<void>;
 }
 
 const UserProfileContext = createContext<UserProfileContextType | undefined>(undefined);
 
-const DEFAULT_PROFILE: UserProfile = {
-  name: 'Shobhan',
-  course: 'BDS',
-  year: '3rd Year',
-  institution: 'Dental College',
-  studentId: 'DC2022001',
-  email: 'shobhan@example.com',
-};
-
 const STORAGE_KEYS = {
-  USER_PROFILE: '@skipzy_user_profile',
   DARK_MODE: '@skipzy_dark_mode',
   NOTIFICATIONS: '@skipzy_notifications',
   LANGUAGE: '@skipzy_language',
 };
 
 export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [userProfile, setUserProfile] = useState<AppUserProfile | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [language, setLanguageState] = useState('en');
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load all data from AsyncStorage on mount
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  const loadAllData = async () => {
+  // Load user profile from Supabase
+  const loadUserProfile = async () => {
     try {
-      const [profileData, darkModeData, notificationsData, languageData] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
+      setLoading(true);
+      setError(null);
+      const profile = await userService.getCurrentUser();
+      setUserProfile(profile);
+    } catch (err) {
+      console.error('Error loading user profile:', err);
+      setError('Failed to load user profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load local preferences from AsyncStorage
+  const loadLocalPreferences = async () => {
+    try {
+      const [darkModeData, notificationsData, languageData] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.DARK_MODE),
         AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
         AsyncStorage.getItem(STORAGE_KEYS.LANGUAGE),
       ]);
 
-      if (profileData) {
-        setUserProfile(JSON.parse(profileData));
-      }
       if (darkModeData !== null) {
         setDarkMode(JSON.parse(darkModeData));
       }
@@ -74,22 +68,57 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (languageData) {
         setLanguageState(languageData);
       }
-
-      setIsLoaded(true);
     } catch (error) {
-      console.error('Error loading user data:', error);
-      setIsLoaded(true);
+      console.error('Error loading local preferences:', error);
     }
   };
 
-  const updateUserProfile = async (updates: Partial<UserProfile>) => {
+  // Listen to auth state changes
+  useEffect(() => {
+    const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        await loadUserProfile();
+      } else if (event === 'SIGNED_OUT') {
+        setUserProfile(null);
+        setError(null);
+      }
+    });
+
+    // Load data on mount
+    const initializeData = async () => {
+      await loadLocalPreferences();
+      
+      // Check if user is already signed in
+      const { data } = await authService.getSession();
+      if (data?.session) {
+        await loadUserProfile();
+      }
+      
+      setIsLoaded(true);
+    };
+    
+    initializeData();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const updateUserProfile = async (updates: Partial<AppUserProfile>): Promise<boolean> => {
     try {
-      const newProfile = { ...userProfile, ...updates };
-      setUserProfile(newProfile);
-      await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
-    } catch (error) {
-      console.error('Error saving user profile:', error);
-      throw error;
+      setError(null);
+      const success = await userService.updateUserProfile(updates);
+      
+      if (success) {
+        // Update local state immediately for better UX
+        setUserProfile(prev => prev ? { ...prev, ...updates } : null);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Error updating user profile:', err);
+      setError('Failed to update user profile');
+      return false;
     }
   };
 
@@ -125,21 +154,26 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   const resetAllData = async () => {
     try {
       await AsyncStorage.multiRemove([
-        STORAGE_KEYS.USER_PROFILE,
         STORAGE_KEYS.DARK_MODE,
         STORAGE_KEYS.NOTIFICATIONS,
         STORAGE_KEYS.LANGUAGE,
       ]);
       
       // Reset to defaults
-      setUserProfile(DEFAULT_PROFILE);
       setDarkMode(true);
       setNotificationsEnabled(true);
       setLanguageState('en');
+      
+      // Note: We don't reset userProfile here as it's managed by Supabase
+      // The user would need to sign out to clear their profile data
     } catch (error) {
       console.error('Error resetting data:', error);
       throw error;
     }
+  };
+
+  const refreshUserProfile = async () => {
+    await loadUserProfile();
   };
 
   // Don't render children until data is loaded
@@ -151,6 +185,8 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
     <UserProfileContext.Provider
       value={{
         userProfile,
+        loading,
+        error,
         updateUserProfile,
         darkMode,
         toggleDarkMode,
@@ -159,6 +195,7 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
         language,
         setLanguage,
         resetAllData,
+        refreshUserProfile,
       }}
     >
       {children}

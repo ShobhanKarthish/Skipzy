@@ -1,204 +1,35 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Alert,
-  Animated,
-  Modal,
-} from 'react-native';
-// Removed RNPickerSelect import as we're building a custom one
+import { useSubjects } from '@/contexts/SubjectsContext';
+import { AppAttendanceRecord } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+    Alert,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 
-type AttendanceStatus = 'Present' | 'Absent' | 'On Duty' | 'Holiday';
-
-interface AttendanceRecord {
-  date: string;
-  status: AttendanceStatus;
-}
-
-interface Subject {
-  id: number;
-  name: string;
-  staffName: string;
-  minAttendance: number;
-  days: string[];
-  timeSlot: string;
-  classType: string;
-  history: AttendanceRecord[];
-}
-
-const mockSubject: Subject = {
-  id: 2,
-  name: 'Crown & Bridge',
-  staffName: 'Dr. Sharma',
-  minAttendance: 75,
-  days: ['Tue', 'Thu'],
-  timeSlot: '9:00 AM',
-  classType: 'Lab',
-  history: [],
-};
+type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
 
 const ATTENDANCE_STATUSES: AttendanceStatus[] = [
   'Present',
   'Absent',
-  'On Duty',
+  'OD',
   'Holiday'
 ];
 
-// --- NEW CUSTOM STATUS PICKER COMPONENT ---
-interface StatusPickerProps {
-  label: string;
-  selectedValue: AttendanceStatus | null;
-  onValueChange: (value: AttendanceStatus) => void;
-  items: { label: string; value: AttendanceStatus }[];
-}
-
-const StatusPicker: React.FC<StatusPickerProps> = ({ label, selectedValue, onValueChange, items }) => {
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const displayLabel = selectedValue ? selectedValue : label;
-
-  return (
-    <View>
-      <TouchableOpacity
-        style={styles.pickerBoxCustom} // Custom style for the button that opens the picker
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.pickerTextCustom, !selectedValue && styles.placeholderText]}>
-          {displayLabel}
-        </Text>
-        <Ionicons name="chevron-down" size={22} color="#8b5cf6" />
-      </TouchableOpacity>
-
-      <Modal
-        transparent
-        visible={modalVisible}
-        animationType="fade" // Fade animation for a smoother look
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)} // Close modal when clicking outside
-        >
-          <View style={styles.customPickerModalContent}>
-            <Text style={styles.modalTitle}>Select attendance status...</Text>
-            {items.map((item) => (
-              <TouchableOpacity
-                key={item.value}
-                style={[
-                  styles.customPickerItem,
-                  selectedValue === item.value && styles.customPickerSelectedItem,
-                ]}
-                onPress={() => {
-                  onValueChange(item.value);
-                  setModalVisible(false);
-                }}
-              >
-                <Text style={[
-                  styles.customPickerItemText,
-                  selectedValue === item.value && styles.customPickerSelectedItemText
-                ]}>
-                  {item.label}
-                </Text>
-                {selectedValue === item.value && (
-                  <Ionicons name="checkmark" size={20} color="#8b5cf6" />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </View>
-  );
-};
-// --- END NEW CUSTOM STATUS PICKER COMPONENT ---
-
-
-export default function SubjectDetailScreen() {
-  const router = useRouter();
-  const { subjectId } = useLocalSearchParams();
-
-  const [subject, setSubject] = useState<Subject>(mockSubject);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus | null>(null);
-  const [saveAnim] = useState(new Animated.Value(0));
-  const [saveText, setSaveText] = useState('Save Attendance');
-  const [editIndex, setEditIndex] = useState<number | null>(null);
-  const [editStatus, setEditStatus] = useState<AttendanceStatus | null>(null);
-  const [editModalVisible, setEditModalVisible] = useState(false); // Renamed for clarity
-
-  const getStats = () => {
-    const attended = subject.history.filter(h => h.status === 'Present' || h.status === 'On Duty').length;
-    const total = subject.history.filter(
-      h => h.status === 'Present' || h.status === 'Absent'
-    ).length;
-    const absent = subject.history.filter(h => h.status === 'Absent').length;
-    
-    return { attended, total, absent };
-  };
-
-  const stats = getStats();
-  const percentage = stats.total > 0 ? Math.round((stats.attended / stats.total) * 100) : 0;
-
-  const calculateSafeToSkip = () => {
-    if (stats.total === 0) return 0;
-    const minClassesRequired = Math.ceil((subject.minAttendance / 100) * stats.total);
-    const maxSkipsAllowed = stats.total - minClassesRequired;
-    return Math.max(0, maxSkipsAllowed - stats.absent);
-  };
-
-  const safeToSkip = calculateSafeToSkip();
-  const showCriticalWarning = percentage < subject.minAttendance && safeToSkip <= 0;
-
-  const handleSaveAttendance = () => {
-    if (!selectedStatus) {
-      Alert.alert('Error', 'Please select an attendance status');
-      return;
-    }
-    const newHistory = [...subject.history, { date: selectedDate, status: selectedStatus }];
-    setSubject({ ...subject, history: newHistory });
-    setSelectedStatus(null);
-    animateSave();
-  };
-
-  const animateSave = () => {
-    setSaveText('Saved!');
-    Animated.timing(saveAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start(() => {
-      setTimeout(() => {
-        Animated.timing(saveAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
-          setSaveText('Save Attendance');
-        });
-      }, 1000);
-    });
-  };
-
-  const handleEditRecord = (index: number) => {
-    setEditIndex(index);
-    setEditStatus(subject.history[index].status);
-    setEditModalVisible(true); // Use the renamed state
-  };
-
-  const saveEditStatus = () => {
-    if (!editStatus || editIndex === null) {
-      Alert.alert('Error', 'Please select an attendance status');
-      return;
-    }
-    const newHistory = subject.history.slice();
-    newHistory[editIndex].status = editStatus;
-    setSubject({ ...subject, history: newHistory });
-    setEditModalVisible(false); // Use the renamed state
-  };
+const StatusPicker: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (status: AttendanceStatus) => void;
+  currentStatus?: AttendanceStatus;
+}> = ({ visible, onClose, onSelect, currentStatus }) => {
+  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus | undefined>(currentStatus);
 
   const getStatusIcon = (status: AttendanceStatus) => {
     switch (status) {
@@ -206,316 +37,689 @@ export default function SubjectDetailScreen() {
         return { icon: 'checkmark-circle' as const, color: '#10b981' };
       case 'Absent':
         return { icon: 'close-circle' as const, color: '#ef4444' };
-      case 'On Duty':
+      case 'OD':
         return { icon: 'briefcase' as const, color: '#f59e0b' };
       case 'Holiday':
         return { icon: 'home' as const, color: '#3b82f6' };
-      default:
-        return { icon: 'help-circle' as const, color: '#6b7280' };
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const handleSelect = () => {
+    if (selectedStatus) {
+      onSelect(selectedStatus);
+    }
+    onClose();
   };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.statusPicker}>
+          <Text style={styles.pickerTitle}>Select Status</Text>
+          
+          <View style={styles.statusList}>
+            {ATTENDANCE_STATUSES.map((status) => {
+              const { icon, color } = getStatusIcon(status);
+              const isSelected = selectedStatus === status;
+              
+              return (
+                <TouchableOpacity
+                  key={status}
+                  style={[
+                    styles.statusOption,
+                    isSelected && { backgroundColor: `${color}20`, borderColor: color }
+                  ]}
+                  onPress={() => setSelectedStatus(status)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.statusIcon, { backgroundColor: `${color}20` }]}>
+                    <Ionicons name={icon} size={24} color={color} />
+                  </View>
+                  <Text style={[styles.statusText, isSelected && { color }]}>
+                    {status}
+                  </Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark" size={20} color={color} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.pickerActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectButton, !selectedStatus && styles.selectButtonDisabled]}
+              onPress={handleSelect}
+              disabled={!selectedStatus}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.selectButtonText}>Select</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+export default function SubjectDetailScreen() {
+  const { subjectId } = useLocalSearchParams();
+  const router = useRouter();
+  const { subjects, loading, error, addAttendance, updateAttendance, deleteAttendance } = useSubjects();
+  
+  const [statusPickerVisible, setStatusPickerVisible] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [editingRecord, setEditingRecord] = useState<AppAttendanceRecord | null>(null);
+
+  // Find the subject by ID
+  const subject = subjects.find(s => s.id === subjectId);
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+        <View style={styles.loadingContainer}>
+          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
+          <Text style={styles.loadingText}>Loading subject details...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error || !subject) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+          <Text style={styles.errorTitle}>Subject Not Found</Text>
+          <Text style={styles.errorText}>
+            {error || 'The requested subject could not be found.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Calculate attendance statistics
+  const calculateStats = () => {
+    const attended = subject.history.filter(h => h.status === 'Present' || h.status === 'OD').length;
+    const total = subject.history.filter(h => h.status === 'Present' || h.status === 'Absent').length;
+    const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+    
+    const minRequired = Math.ceil((subject.minAttendance / 100) * total);
+    const maxSkips = total - minRequired;
+    const skipsUsed = total - attended;
+    const safeToSkip = Math.max(0, maxSkips - skipsUsed);
+
+    return { attended, total, percentage, safeToSkip };
+  };
+
+  const stats = calculateStats();
+
+  // Get status color
+  const getStatusColor = (status: AttendanceStatus) => {
+    switch (status) {
+      case 'Present':
+        return '#10b981';
+      case 'Absent':
+        return '#ef4444';
+      case 'OD':
+        return '#f59e0b';
+      case 'Holiday':
+        return '#3b82f6';
+      default:
+        return '#6b7280';
+    }
+  };
+
+  // Get status icon
+  const getStatusIcon = (status: AttendanceStatus) => {
+    switch (status) {
+      case 'Present':
+        return 'checkmark-circle';
+      case 'Absent':
+        return 'close-circle';
+      case 'OD':
+        return 'briefcase';
+      case 'Holiday':
+        return 'home';
+      default:
+        return 'help-circle';
+    }
+  };
+
+  // Handle status selection
+  const handleStatusSelect = async (status: AttendanceStatus) => {
+    if (!selectedDate) return;
+
+    try {
+      if (editingRecord) {
+        // Update existing record
+        const success = await updateAttendance(subject.id, selectedDate, status);
+        if (success) {
+          Alert.alert('Success', 'Attendance updated successfully!');
+        } else {
+          Alert.alert('Error', 'Failed to update attendance. Please try again.');
+        }
+      } else {
+        // Add new record
+        const record: AppAttendanceRecord = {
+          date: selectedDate,
+          status,
+          notes: null,
+        };
+        const success = await addAttendance(subject.id, record);
+        if (success) {
+          Alert.alert('Success', 'Attendance marked successfully!');
+        } else {
+          Alert.alert('Error', 'Failed to mark attendance. Please try again.');
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    }
+
+    setSelectedDate(null);
+    setEditingRecord(null);
+  };
+
+  // Handle record press
+  const handleRecordPress = (record: AppAttendanceRecord) => {
+    setEditingRecord(record);
+    setSelectedDate(record.date);
+    setStatusPickerVisible(true);
+  };
+
+  // Handle add new attendance
+  const handleAddAttendance = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setEditingRecord(null);
+    setSelectedDate(today);
+    setStatusPickerVisible(true);
+  };
+
+  // Check if today is already marked
+  const today = new Date().toISOString().split('T')[0];
+  const todayRecord = subject.history.find(record => record.date === today);
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-
+      
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color="#9ca3af" />
-          <Text style={styles.backText}>Back to Subjects</Text>
-        </TouchableOpacity>
-
-        {/* Header Card */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerTop}>
-            <Text style={styles.subjectTitle}>{subject.name}</Text>
-            <View style={styles.badgeContainer}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{subject.classType}</Text>
-              </View>
-              <Text style={styles.staffName}>{subject.staffName}</Text>
-            </View>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={styles.subjectName}>{subject.name}</Text>
+            <Text style={styles.subjectDetails}>
+              {subject.staffName} • {subject.classType} • {subject.timeSlot}
+            </Text>
           </View>
+        </View>
 
+        {/* Statistics Card */}
+        <View style={styles.statsCard}>
+          <Text style={styles.cardTitle}>Attendance Statistics</Text>
           <View style={styles.statsGrid}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{percentage}
-                <Text style={styles.statPercent}>%</Text>
-              </Text>
-              <Text style={styles.statLabel}>Current Attendance</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.percentage}%</Text>
+              <Text style={styles.statLabel}>Overall</Text>
             </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{stats.attended}
-                <Text style={styles.statPercent}>/{stats.total}</Text>
-              </Text>
-              <Text style={styles.statLabel}>Classes Attended</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.attended}</Text>
+              <Text style={styles.statLabel}>Attended</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.total}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.safeToSkip}</Text>
+              <Text style={styles.statLabel}>Safe to Skip</Text>
             </View>
           </View>
         </View>
 
         {/* Critical Warning */}
-        {showCriticalWarning && (
+        {stats.percentage < subject.minAttendance && (
           <View style={styles.warningCard}>
-            <Ionicons name="warning" size={20} color="#ef4444" />
+            <Ionicons name="warning" size={24} color="#f59e0b" />
             <View style={styles.warningContent}>
-              <Text style={styles.warningTitle}>Critical: Cannot Miss Classes</Text>
+              <Text style={styles.warningTitle}>Critical Warning</Text>
               <Text style={styles.warningText}>
-                You need to attend all remaining classes to maintain {subject.minAttendance}% attendance.
+                Your attendance is below the required {subject.minAttendance}%. 
+                You need to attend more classes to meet the requirement.
               </Text>
             </View>
           </View>
         )}
 
-        {/* Mark Attendance Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mark Attendance</Text>
-          <View style={styles.card}>
-            <View style={styles.dateInputContainer}>
-              <Ionicons name="calendar-outline" size={20} color="#6b7280" />
-              <Text style={styles.dateText}>{formatDate(selectedDate)}</Text>
-            </View>
-
-            {/* Custom Status Picker */}
-            <StatusPicker
-              label="Select attendance status..."
-              selectedValue={selectedStatus}
-              onValueChange={setSelectedStatus}
-              items={ATTENDANCE_STATUSES.map(s => ({ label: s, value: s }))}
-            />
-
-            <Animated.View style={{
-              opacity: saveAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1] }),
-              transform: [{
-                scale: saveAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] })
-              }]
-            }}>
+        {/* Quick Actions */}
+        <View style={styles.actionsCard}>
+          <Text style={styles.cardTitle}>Quick Actions</Text>
+          <View style={styles.actionButtons}>
+            {!todayRecord ? (
               <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={handleSaveAttendance}
-                activeOpacity={0.8}
+                style={styles.primaryButton}
+                onPress={handleAddAttendance}
+                activeOpacity={0.7}
               >
-                <Text style={styles.saveBtnText}>{saveText}</Text>
+                <Ionicons name="add-circle" size={20} color="#ffffff" />
+                <Text style={styles.primaryButtonText}>Mark Today's Attendance</Text>
               </TouchableOpacity>
-            </Animated.View>
+            ) : (
+              <View style={styles.todayMarked}>
+                <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                <Text style={styles.todayMarkedText}>
+                  Today marked as: {todayRecord.status}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
-        {/* Recent History */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent History</Text>
+        {/* Attendance History */}
+        <View style={styles.historyCard}>
+          <Text style={styles.cardTitle}>Attendance History</Text>
           {subject.history.length === 0 ? (
-            <View style={styles.emptyState}>
+            <View style={styles.emptyHistory}>
               <Ionicons name="calendar-outline" size={48} color="#4b5563" />
-              <Text style={styles.emptyStateText}>No attendance history yet</Text>
-              <Text style={styles.emptyStateSubtext}>Start marking your attendance above</Text>
+              <Text style={styles.emptyTitle}>No Records Yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Start marking your attendance to see history here
+              </Text>
             </View>
           ) : (
             <View style={styles.historyList}>
-              {[...subject.history].reverse().slice(0, 5).map((record, idx) => {
-                const actualIdx = subject.history.length - 1 - idx;
-                const { icon, color } = getStatusIcon(record.status);
-                return (
+              {subject.history
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map((record, index) => (
                   <TouchableOpacity
-                    key={idx}
+                    key={index}
                     style={styles.historyItem}
+                    onPress={() => handleRecordPress(record)}
                     activeOpacity={0.7}
-                    onPress={() => handleEditRecord(actualIdx)}
                   >
                     <View style={styles.historyLeft}>
-                      <View style={[styles.historyIcon, { backgroundColor: `${color}20` }]}>
-                        <Ionicons name={icon} size={20} color={color} />
+                      <View
+                        style={[
+                          styles.statusIndicator,
+                          { backgroundColor: getStatusColor(record.status) },
+                        ]}
+                      >
+                        <Ionicons
+                          name={getStatusIcon(record.status) as any}
+                          size={16}
+                          color="#ffffff"
+                        />
                       </View>
-                      <Text style={styles.historyStatus}>{record.status}</Text>
+                      <View style={styles.historyInfo}>
+                        <Text style={styles.historyDate}>
+                          {new Date(record.date).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                        <Text style={styles.historyStatus}>{record.status}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.historyDate}>{formatDate(record.date)}</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#6b7280" />
                   </TouchableOpacity>
-                );
-              })}
+                ))}
             </View>
           )}
         </View>
+
+        <View style={styles.bottomPadding} />
       </ScrollView>
 
-      {/* --- BOTTOM SUMMARY REMOVED ---
-      <View style={styles.bottomSummary}>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryNumber}>{stats.attended}</Text>
-          <Text style={styles.summaryLabel}>Total Present</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryNumber, { color: '#ef4444' }]}>{stats.absent}</Text>
-          <Text style={styles.summaryLabel}>Total Absent</Text>
-        </View>
-      </View>
-      */}
-
-      {/* Modal for Editing History (now using the custom picker's style) */}
-      <Modal
-        transparent
-        visible={editModalVisible} // Use the renamed state
-        animationType="slide"
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.customPickerModalContent}> {/* Reusing this style */}
-            <Text style={styles.modalTitle}>Edit Attendance Status</Text>
-            {ATTENDANCE_STATUSES.map((statusItem) => (
-              <TouchableOpacity
-                key={statusItem}
-                style={[
-                  styles.customPickerItem,
-                  editStatus === statusItem && styles.customPickerSelectedItem,
-                ]}
-                onPress={() => setEditStatus(statusItem)}
-              >
-                <Text style={[
-                  styles.customPickerItemText,
-                  editStatus === statusItem && styles.customPickerSelectedItemText
-                ]}>
-                  {statusItem}
-                </Text>
-                {editStatus === statusItem && (
-                  <Ionicons name="checkmark" size={20} color="#8b5cf6" />
-                )}
-              </TouchableOpacity>
-            ))}
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16, width: '100%' }}>
-              <TouchableOpacity
-                style={styles.modalBtn}
-                onPress={saveEditStatus}
-              >
-                <Text style={styles.modalBtnText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: '#ef4444' }]}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.modalBtnText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Status Picker Modal */}
+      <StatusPicker
+        visible={statusPickerVisible}
+        onClose={() => {
+          setStatusPickerVisible(false);
+          setSelectedDate(null);
+          setEditingRecord(null);
+        }}
+        onSelect={handleStatusSelect}
+        currentStatus={editingRecord?.status}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  scrollView: { flex: 1 },
-  // --- ADJUSTED PADDINGBOTTOM ---
-  scrollContent: { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
-  backText: { fontSize: 14, color: '#9ca3af', fontWeight: '500' },
-  headerCard: { backgroundColor: '#8b5cf6', padding: 20, borderRadius: 16, marginBottom: 16 },
-  headerTop: { marginBottom: 20 },
-  subjectTitle: { fontSize: 24, fontWeight: '700', color: '#ffffff', marginBottom: 12 },
-  badgeContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  badge: { backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
-  badgeText: { color: '#ffffff', fontSize: 12, fontWeight: '600' },
-  staffName: { color: '#ffffff', fontSize: 14, opacity: 0.9 },
-  statsGrid: { flexDirection: 'row', gap: 16 },
-  statBox: { flex: 1, alignItems: 'center' },
-  statNumber: { fontSize: 32, fontWeight: '700', color: '#ffffff' },
-  statPercent: { fontSize: 20, color: '#ffffff', opacity: 0.8 },
-  statLabel: { fontSize: 11, color: '#ffffff', opacity: 0.7, marginTop: 4 },
-  warningCard: { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: 16, flexDirection: 'row', gap: 12, marginBottom: 16 },
-  warningContent: { flex: 1 },
-  warningTitle: { fontSize: 14, fontWeight: '600', color: '#ef4444', marginBottom: 4 },
-  warningText: { fontSize: 13, color: '#ef4444', opacity: 0.9 },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 12 },
-  card: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#262626' },
-  dateInputContainer: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#262626', padding: 16, borderRadius: 12, marginBottom: 16 },
-  dateText: { fontSize: 16, color: '#ffffff', flex: 1 },
-  saveBtn: { backgroundColor: '#8b5cf6', padding: 16, borderRadius: 12, alignItems: 'center' },
-  saveBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
-  emptyState: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 48, alignItems: 'center', borderWidth: 1, borderColor: '#262626' },
-  emptyStateText: { color: '#ffffff', fontSize: 16, fontWeight: '600', marginTop: 16, marginBottom: 4 },
-  emptyStateSubtext: { color: '#6b7280', fontSize: 14 },
-  historyList: { gap: 8 },
-  historyItem: { backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#262626' },
-  historyLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  historyIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  historyStatus: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
-  historyDate: { fontSize: 13, color: '#6b7280' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: '#222', borderRadius: 16, padding: 24, width: '90%', alignItems: 'center' },
-  modalTitle: { color: '#fff', fontWeight: '700', fontSize: 18, marginBottom: 20 },
-  modalBtn: { backgroundColor: '#8b5cf6', padding: 12, borderRadius: 6, alignItems: 'center', flex: 1 },
-  modalBtnText: { color: '#fff', fontWeight: '700' },
-
-  // --- NEW CUSTOM PICKER STYLES ---
-  pickerBoxCustom: {
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+  },
+  loadingText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '500',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  subjectName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  subjectDetails: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  statsCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 16,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  warningCard: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  warningContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f59e0b',
+    marginBottom: 4,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#f59e0b',
+    lineHeight: 20,
+  },
+  actionsCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  actionButtons: {
+    gap: 12,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8b5cf6',
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  todayMarked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  todayMarkedText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#10b981',
+  },
+  historyCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  emptyHistory: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  historyList: {
+    gap: 12,
+  },
+  historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#262626',
+    borderRadius: 12,
+    padding: 16,
+  },
+  historyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  historyStatus: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  bottomPadding: {
+    height: 100,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusPicker: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  pickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  statusList: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#3a3a3a',
-    marginBottom: 16,
-    height: 56, // Match height of date input
+    borderColor: '#262626',
   },
-  pickerTextCustom: {
-    fontSize: 16,
-    color: '#ffffff',
-    flex: 1,
-  },
-  placeholderText: {
-    color: '#9ca3af',
-  },
-  customPickerModalContent: {
-    backgroundColor: '#1a1a1a', // Darker background for the modal content
-    borderRadius: 16,
-    padding: 20,
-    width: '90%', // Wider modal
-    maxHeight: '70%', // Limit height
-    borderWidth: 1,
-    borderColor: '#3a3a3a',
-  },
-  customPickerItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  statusIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#262626',
+    marginRight: 12,
   },
-  customPickerSelectedItem: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)', // Light purple background for selected
-    borderRadius: 8, // Rounded corners for selected item
-  },
-  customPickerItemText: {
-    color: '#ffffff',
+  statusText: {
+    flex: 1,
     fontSize: 16,
+    fontWeight: '500',
+    color: '#ffffff',
   },
-  customPickerSelectedItemText: {
+  pickerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#262626',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#8b5cf6', // Purple text for selected
+    color: '#ffffff',
   },
-
+  selectButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#8b5cf6',
+    alignItems: 'center',
+  },
+  selectButtonDisabled: {
+    backgroundColor: '#4b5563',
+  },
+  selectButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
 });

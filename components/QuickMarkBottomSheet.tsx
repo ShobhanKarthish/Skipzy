@@ -1,17 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  Animated,
-  Dimensions,
-  PanResponder,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Subject, AttendanceRecord } from '@/types/subjects';
 import { useSubjects } from '@/contexts/SubjectsContext';
+import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    Animated,
+    Dimensions,
+    Modal,
+    PanResponder,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.5;
@@ -20,7 +20,7 @@ type AttendanceStatus = 'Present' | 'Absent' | 'On Duty' | 'Holiday';
 
 interface QuickMarkBottomSheetProps {
   visible: boolean;
-  subject: Subject | null;
+  subject: AppSubject | null;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -111,7 +111,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     }, 2000);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!subject || !selectedStatus) {
       showToast('Please select an attendance status');
       return;
@@ -128,20 +128,25 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
       return;
     }
 
-    const record: AttendanceRecord = {
+    const record: AppAttendanceRecord = {
       date: today,
       status: selectedStatus,
+      notes: null,
     };
 
-    addAttendance(subject.id, record);
+    const success = await addAttendance(subject.id, record);
     
-    showToast('Attendance marked successfully!');
+    if (success) {
+      showToast('Attendance marked successfully!');
+      setTimeout(() => {
+        handleClose();
+        onSuccess?.();
+      }, 1500);
+    } else {
+      showToast('Failed to mark attendance');
+    }
+    
     setSaving(false);
-    
-    setTimeout(() => {
-      handleClose();
-      onSuccess?.();
-    }, 1500);
   };
 
   const getStatusIcon = (status: AttendanceStatus) => {

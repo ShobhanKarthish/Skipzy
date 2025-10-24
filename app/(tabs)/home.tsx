@@ -1,64 +1,54 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Animated,
-  StatusBar,
-  Dimensions,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
-import { useSubjects } from '@/contexts/SubjectsContext';
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
-import { Subject } from '@/types/subjects';
+import { useSubjects } from '@/contexts/SubjectsContext';
+import { useUserProfile } from '@/contexts/UserProfileContext';
+import { AppSubject } from '@/types/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import {
+    Animated,
+    Dimensions,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
-// Timetable data
-const timeTable: Record<string, Array<{ name: string; time: string; icon: string }>> = {
-  Mon: [
-    { name: 'Oral Pathology Lecture', time: '7:45 AM - 8:45 AM', icon: 'school-outline' },
-    { name: 'General Medicine Lecture', time: '2:15 PM - 3:15 PM', icon: 'school-outline' },
-  ],
-  Tue: [
-    { name: 'Crown & Bridge Lab / Ortho', time: '8:45 AM - 9:45 AM', icon: 'flask-outline' },
-    { name: 'OPD', time: '2:15 PM - 3:15 PM', icon: 'medical-outline' },
-  ],
-  Wed: [
-    { name: 'Conservative Dentistry', time: '7:45 AM - 8:45 AM', icon: 'fitness-outline' },
-    { name: 'Oral Medicine Lecture', time: '8:45 AM - 9:45 AM', icon: 'school-outline' },
-    { name: 'Oral Pathology Lab', time: '2:15 PM - 3:15 PM', icon: 'flask-outline' },
-  ],
-  Thu: [
-    { name: 'Prosthodontics Lecture', time: '7:45 AM - 8:45 AM', icon: 'school-outline' },
-    { name: 'Periodontics Lecture', time: '8:45 AM - 9:45 AM', icon: 'school-outline' },
-    { name: 'General Surgery Lecture', time: '2:15 PM - 3:15 PM', icon: 'school-outline' },
-  ],
-  Fri: [
-    { name: 'Oral Pathology Lecture', time: '8:45 AM - 9:45 AM', icon: 'school-outline' },
-    { name: 'General Medicine Lecture', time: '2:15 PM - 3:15 PM', icon: 'school-outline' },
-  ],
-  Sat: [
-    { name: 'Pedodontics Lecture', time: '7:45 AM - 8:45 AM', icon: 'school-outline' },
-    { name: 'OPD', time: '8:45 AM - 9:45 AM', icon: 'medical-outline' },
-    { name: 'OPD', time: '2:15 PM - 3:15 PM', icon: 'medical-outline' },
-  ],
-  Sun: [],
+// Generate schedule from subjects data
+const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string) => {
+  const dayMap: Record<string, number> = {
+    'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7
+  };
+  
+  const dayNumber = dayMap[dayName];
+  if (!dayNumber) return [];
+  
+  return subjects
+    .filter(subject => subject.days.includes(dayName))
+    .map(subject => ({
+      name: subject.name,
+      time: subject.timeSlot || 'Time TBD',
+      icon: subject.classType === 'Lecture' ? 'school-outline' : 
+            subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+      subjectId: subject.id,
+    }));
 };
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const HomeScreen = () => {
-  const { subjects } = useSubjects();
+  const { subjects, loading: subjectsLoading } = useSubjects();
+  const { userProfile, loading: profileLoading } = useUserProfile();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [progressAnim] = useState(new Animated.Value(0));
   const [percentageAnim] = useState(new Animated.Value(0));
   const [percentageText, setPercentageText] = useState('0');
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -69,7 +59,7 @@ const HomeScreen = () => {
 
     subjects.forEach(subject => {
       const attended = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'On Duty'
+        h => h.status === 'Present' || h.status === 'OD'
       ).length;
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
@@ -105,7 +95,7 @@ const HomeScreen = () => {
     return () => {
       percentageAnim.removeListener(listenerId);
     };
-  }, [targetPercentage, subjects]); // Add subjects dependency to re-animate on change
+  }, [targetPercentage, subjects]);
 
   const radius = 50;
   const strokeWidth = 8;
@@ -145,15 +135,17 @@ const HomeScreen = () => {
 
   const getScheduleForDate = (date: Date) => {
     const dayName = dayNames[date.getDay()];
-    return timeTable[dayName] || [];
+    return generateScheduleFromSubjects(subjects, dayName);
   };
 
   const handleScheduleItemPress = (item: any) => {
-    // Find matching subject
-    const subject = subjects.find(s => 
-      s.name.toLowerCase().includes(item.name.toLowerCase()) || 
-      item.name.toLowerCase().includes(s.name.toLowerCase())
-    );
+    // Find subject by ID if available, otherwise by name
+    const subject = item.subjectId 
+      ? subjects.find(s => s.id === item.subjectId)
+      : subjects.find(s => 
+          s.name.toLowerCase().includes(item.name.toLowerCase()) || 
+          item.name.toLowerCase().includes(s.name.toLowerCase())
+        );
     
     if (subject) {
       setSelectedSubject(subject);
@@ -164,11 +156,11 @@ const HomeScreen = () => {
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const schedule = getScheduleForDate(selectedDate);
-  const selectedDateKey = selectedDate.toDateString(); // For efficient checking
+  const selectedDateKey = selectedDate.toDateString();
 
   // Calculate total classes attended
   const totalClassesAttended = subjects.reduce((acc, subject) => {
-    return acc + subject.history.filter(h => h.status === 'Present' || h.status === 'On Duty').length;
+    return acc + subject.history.filter(h => h.status === 'Present' || h.status === 'OD').length;
   }, 0);
 
   // Calculate safe to skip
@@ -176,7 +168,7 @@ const HomeScreen = () => {
     let totalSafe = 0;
     subjects.forEach(subject => {
       const attended = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'On Duty'
+        h => h.status === 'Present' || h.status === 'OD'
       ).length;
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
@@ -192,6 +184,19 @@ const HomeScreen = () => {
     return totalSafe;
   };
 
+  // Show loading state
+  if (subjectsLoading || profileLoading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+        <View style={styles.loadingContainer}>
+          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
@@ -205,7 +210,7 @@ const HomeScreen = () => {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.greeting}>Good Morning,</Text>
-            <Text style={styles.userName}>Shobhan</Text>
+            <Text style={styles.userName}>{userProfile?.name || 'Student'}</Text>
           </View>
           <TouchableOpacity style={styles.profilePic} activeOpacity={0.7}>
             <Ionicons name="person" size={24} color="#8b5cf6" />
@@ -330,12 +335,13 @@ const HomeScreen = () => {
           ) : (
             <View style={styles.scheduleList}>
               {schedule.map((item, index) => {
-                
-                // --- Find matching subject and check if marked for selected date ---
-                const subject = subjects.find(s => 
-                  s.name.toLowerCase().includes(item.name.toLowerCase()) || 
-                  item.name.toLowerCase().includes(s.name.toLowerCase())
-                );
+                // Find matching subject and check if marked for selected date
+                const subject = item.subjectId 
+                  ? subjects.find(s => s.id === item.subjectId)
+                  : subjects.find(s => 
+                      s.name.toLowerCase().includes(item.name.toLowerCase()) || 
+                      item.name.toLowerCase().includes(s.name.toLowerCase())
+                    );
                 
                 let isMarked = false;
                 if (subject) {
@@ -343,7 +349,6 @@ const HomeScreen = () => {
                     record => new Date(record.date).toDateString() === selectedDateKey
                   );
                 }
-                // --- End of new logic ---
 
                 return (
                   <TouchableOpacity 
@@ -365,7 +370,7 @@ const HomeScreen = () => {
                       </View>
                     </View>
                     
-                    {/* --- Conditionally render Mark/Marked button --- */}
+                    {/* Conditionally render Mark/Marked button */}
                     {isMarked ? (
                       <View style={[styles.markAttendanceBtn, styles.markAttendanceBtnMarked]}>
                         <Ionicons name="checkmark-circle" size={20} color="#10b981" />
@@ -377,8 +382,6 @@ const HomeScreen = () => {
                         <Text style={styles.markAttendanceText}>Mark</Text>
                       </View>
                     )}
-                    {/* --- End of conditional rendering --- */}
-
                   </TouchableOpacity>
                 );
               })}
@@ -685,6 +688,18 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+  },
+  loadingText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '500',
+    marginTop: 16,
   },
 });
 

@@ -1,38 +1,35 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Modal,
-  TextInput,
-  Switch,
-  Animated,
-  // Alert, // We no longer need the default Alert
-  Share,
-  Linking,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { useUserProfile } from '@/contexts/UserProfileContext';
+import { authService } from '@/lib/supabaseService';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import {
+  Animated,
+  Modal,
+  ScrollView,
+  Share,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-// import RNHTMLtoPDF from 'react-native-html-to-pdf'; // Removed for Expo Go compatibility
 
 interface EditForm {
   name: string;
-  course: string;
-  year: string;
-  institution: string;
-  studentId: string;
   email: string;
+  attendanceTarget: number;
 }
 
 export default function ProfileScreen() {
   const { subjects } = useSubjects();
   const {
     userProfile,
+    loading: profileLoading,
+    error: profileError,
     updateUserProfile,
     darkMode,
     toggleDarkMode,
@@ -40,17 +37,14 @@ export default function ProfileScreen() {
   } = useUserProfile();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [resetModalVisible, setResetModalVisible] = useState(false); // State for the new modal
+  const [resetModalVisible, setResetModalVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(-100)).current;
 
   const [editForm, setEditForm] = useState<EditForm>({
-    name: userProfile.name,
-    course: userProfile.course,
-    year: userProfile.year,
-    institution: userProfile.institution,
-    studentId: userProfile.studentId,
-    email: userProfile.email,
+    name: userProfile?.name || '',
+    email: userProfile?.email || '',
+    attendanceTarget: userProfile?.attendanceTarget || 75,
   });
 
   // Calculate overall attendance
@@ -60,7 +54,7 @@ export default function ProfileScreen() {
 
     subjects.forEach(subject => {
       const attended = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'On Duty'
+        h => h.status === 'Present' || h.status === 'OD'
       ).length;
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
@@ -79,27 +73,39 @@ export default function ProfileScreen() {
 
   const overallStats = calculateOverallAttendance();
 
-  // Calculate last 6 months attendance
+  // Calculate last 6 months attendance from real data
   const calculateMonthlyAttendance = () => {
     const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
     const monthlyData = months.map(month => {
-      // Mock data - in real app, calculate from actual history
-      const percentages: Record<string, number> = {
-        'May': 78,
-        'Jun': 85,
-        'Jul': 90,
-        'Aug': 72,
-        'Sep': 88,
-        'Oct': overallStats.percentage || 75,
-      };
-      return { month, percentage: percentages[month] };
+      // Calculate actual attendance for each month from subjects data
+      let totalAttended = 0;
+      let totalClasses = 0;
+      
+      subjects.forEach(subject => {
+        subject.history.forEach(record => {
+          const recordDate = new Date(record.date);
+          const recordMonth = recordDate.toLocaleDateString('en-US', { month: 'short' });
+          
+          if (recordMonth === month) {
+            if (record.status === 'Present' || record.status === 'OD') {
+              totalAttended++;
+            }
+            if (record.status === 'Present' || record.status === 'Absent') {
+              totalClasses++;
+            }
+          }
+        });
+      });
+      
+      const percentage = totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 100) : 0;
+      return { month, percentage };
     });
     return monthlyData;
   };
 
   const monthlyData = calculateMonthlyAttendance();
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToastMessage(message);
     Animated.timing(toastAnim, {
       toValue: 50,
@@ -118,13 +124,30 @@ export default function ProfileScreen() {
     }, 2500);
   };
 
+  const handleSignOut = async () => {
+    try {
+      const { error } = await authService.signOut();
+      if (error) {
+        showToast('Failed to sign out', 'error');
+      } else {
+        showToast('Signed out successfully', 'success');
+      }
+    } catch (error) {
+      showToast('Failed to sign out', 'error');
+    }
+  };
+
   const handleSaveProfile = async () => {
     try {
-      await updateUserProfile(editForm);
-      setEditModalVisible(false);
-      showToast('Profile updated successfully!');
+      const success = await updateUserProfile(editForm);
+      if (success) {
+        setEditModalVisible(false);
+        showToast('Profile updated successfully!', 'success');
+      } else {
+        showToast('Failed to update profile', 'error');
+      }
     } catch (error) {
-      showToast('Failed to update profile');
+      showToast('Failed to update profile', 'error');
     }
   };
 
@@ -136,7 +159,7 @@ export default function ProfileScreen() {
     // 1. Calculate Per-Subject Stats
     const subjectStats = subjects.map(subject => {
       const attended = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'On Duty'
+        h => h.status === 'Present' || h.status === 'OD'
       ).length;
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
@@ -153,7 +176,9 @@ export default function ProfileScreen() {
 
     // 2. Generate CSV/Text Content
     let csvContent = 'ATTENDANCE REPORT\n';
-    csvContent += `Student: ${userProfile.name}\n`;
+    csvContent += `Student: ${userProfile?.name || 'User'}\n`;
+    csvContent += `Email: ${userProfile?.email || 'N/A'}\n`;
+    csvContent += `Attendance Target: ${userProfile?.attendanceTarget || 75}%\n`;
     csvContent += '============================\n\n';
     
     csvContent += 'OVERALL INSIGHTS\n';
@@ -247,10 +272,10 @@ export default function ProfileScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(userProfile.name)}</Text>
+              <Text style={styles.avatarText}>{getInitials(userProfile?.name || 'User')}</Text>
             </View>
             <View style={styles.headerInfo}>
-              <Text style={styles.userName}>{userProfile.name}</Text>
+              <Text style={styles.userName}>{userProfile?.name || 'User'}</Text>
               <Text style={styles.userRole}>Student</Text>
             </View>
           </View>
@@ -258,12 +283,9 @@ export default function ProfileScreen() {
             style={styles.editIcon}
             onPress={() => {
               setEditForm({
-                name: userProfile.name,
-                course: userProfile.course,
-                year: userProfile.year,
-                institution: userProfile.institution,
-                studentId: userProfile.studentId,
-                email: userProfile.email,
+                name: userProfile?.name || '',
+                email: userProfile?.email || '',
+                attendanceTarget: userProfile?.attendanceTarget || 75,
               });
               setEditModalVisible(true);
             }}
@@ -390,6 +412,15 @@ export default function ProfileScreen() {
             <Text style={styles.actionTextDanger}>Reset All App Data</Text>
             <Ionicons name="trash-outline" size={20} color="#ef4444" />
           </TouchableOpacity>
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleSignOut}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionTextDanger}>Sign Out</Text>
+            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+          </TouchableOpacity>
         </View>
 
         {/* App Version */}
@@ -427,35 +458,31 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Course</Text>
+                <Text style={styles.inputLabel}>Email</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g., BDS, MBBS"
+                  placeholder="Email address"
                   placeholderTextColor="#6b7280"
-                  value={editForm.course}
-                  onChangeText={(text) => setEditForm({ ...editForm, course: text })}
+                  value={editForm.email}
+                  onChangeText={(text) => setEditForm({ ...editForm, email: text })}
+                  keyboardType="email-address"
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Year</Text>
+                <Text style={styles.inputLabel}>Attendance Target (%)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g., 3rd Year"
+                  placeholder="e.g., 75"
                   placeholderTextColor="#6b7280"
-                  value={editForm.year}
-                  onChangeText={(text) => setEditForm({ ...editForm, year: text })}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Institution</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter institution name"
-                  placeholderTextColor="#6b7280"
-                  value={editForm.institution}
-                  onChangeText={(text) => setEditForm({ ...editForm, institution: text })}
+                  value={editForm.attendanceTarget.toString()}
+                  onChangeText={(text) => {
+                    const num = parseInt(text);
+                    if (!isNaN(num) && num >= 0 && num <= 100) {
+                      setEditForm({ ...editForm, attendanceTarget: num });
+                    }
+                  }}
+                  keyboardType="numeric"
                 />
               </View>
             </ScrollView>

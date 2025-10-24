@@ -1,28 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Animated,
-  Easing,
-} from 'react-native';
+import { authService } from '@/lib/supabaseService';
 import { Ionicons } from '@expo/vector-icons';
-import { createClient } from '@supabase/supabase-js';
 import { useRouter, type Href } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View
+} from 'react-native';
 
-import Toast from '../components/ui/Toast';
-import FormInput from '../components/ui/FormInput';
-import PasswordInput from '../components/ui/PasswordInput';
 import AuthButton from '../components/ui/AuthButton';
 import AuthSwitchLink from '../components/ui/AuthSwitchLink';
-
-// Supabase credentials
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import FormInput from '../components/ui/FormInput';
+import PasswordInput from '../components/ui/PasswordInput';
+import Toast from '../components/ui/Toast';
 
 interface FormErrors {
   email?: string;
@@ -90,10 +83,7 @@ export default function AuthScreen() {
     if (!validateForm()) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const { data, error } = await authService.signIn(email.trim(), password);
 
       if (error) {
         showToast(error.message, 'error');
@@ -114,13 +104,7 @@ export default function AuthScreen() {
     if (!validateForm()) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: { name: name.trim() },
-        },
-      });
+      const { data, error } = await authService.signUp(email.trim(), password, name.trim());
 
       if (error) {
         showToast(error.message, 'error');
@@ -144,9 +128,7 @@ export default function AuthScreen() {
     if (!validateForm()) return;
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'skipzy://reset-password',
-      });
+      const { error } = await authService.resetPassword(email.trim());
 
       if (error) {
         showToast(error.message, 'error');

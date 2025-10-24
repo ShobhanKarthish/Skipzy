@@ -1,403 +1,397 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Modal,
-  Animated,
-  Easing,
-} from 'react-native';
+import { useSubjects } from '@/contexts/SubjectsContext';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import {
+    Animated,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 
-// --- Mock Data and Types (for standalone running) ---
-type AttendanceStatus = 'Present' | 'Absent' | 'On Duty' | 'Holiday';
-
-interface AttendanceRecord {
-  date: string; // YYYY-MM-DD
-  status: AttendanceStatus;
-}
-
-interface Subject {
-  id: string;
-  name: string;
-  history: AttendanceRecord[];
-  timeSlot: string;
-}
-
-const mockSubjectsData: Subject[] = [
-  {
-    id: '1',
-    name: 'Oral Pathology',
-    timeSlot: '10:00 AM - 11:00 AM',
-    history: [
-      { date: '2025-10-01', status: 'Present' }, { date: '2025-10-03', status: 'Present' },
-      { date: '2025-10-06', status: 'Absent' }, { date: '2025-10-08', status: 'Present' },
-      { date: '2025-10-10', status: 'On Duty' }, { date: '2025-10-13', status: 'Present' },
-      { date: '2025-10-15', status: 'Present' }, { date: '2025-10-17', status: 'Present' },
-      { date: '2025-10-20', status: 'Present' }, { date: '2025-10-22', status: 'Present' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Crown & Bridge',
-    timeSlot: '11:00 AM - 12:00 PM',
-    history: [
-      { date: '2025-10-01', status: 'Present' }, { date: '2025-10-03', status: 'Absent' },
-      { date: '2025-10-06', status: 'Present' }, { date: '2025-10-08', status: 'Present' },
-      { date: '2025-10-10', status: 'Present' }, { date: '2025-10-13', status: 'Present' },
-      { date: '2025-10-15', status: 'Absent' }, { date: '2025-10-17', status: 'Present' },
-      { date: '2025-10-20', status: 'Present' }, { date: '2025-10-22', status: 'Present' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Prosthodontics',
-    timeSlot: '01:00 PM - 02:00 PM',
-    history: [
-        { date: '2025-10-02', status: 'Present' }, { date: '2025-10-04', status: 'On Duty' },
-        { date: '2025-10-09', status: 'Present' }, { date: '2025-10-11', status: 'Present' },
-        { date: '2025-10-16', status: 'Absent' }, { date: '2025-10-18', status: 'Present' },
-        { date: '2025-10-21', status: 'Present' },
-    ],
-  },
-];
-
-const useSubjects = () => {
-    const [subjects, setSubjects] = useState(mockSubjectsData);
-    
-    const updateAttendance = (subjectId: string, recordIndex: number, newStatus: AttendanceStatus) => {
-        setSubjects(prevSubjects => 
-            prevSubjects.map(subject => {
-                if (subject.id === subjectId) {
-                    const newHistory = [...subject.history];
-                    if (newHistory[recordIndex]) {
-                        newHistory[recordIndex].status = newStatus;
-                    }
-                    return { ...subject, history: newHistory };
-                }
-                return subject;
-            })
-        );
-    };
-
-    return { subjects, updateAttendance };
-};
-// --- End of Mock Data ---
-
-
-const ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'On Duty', 'Holiday'];
+type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
 
 export default function HistoryScreen() {
-  const { subjects, updateAttendance } = useSubjects();
-  const [selectedView, setSelectedView] = useState<'all' | string>('all');
-  const [selectedDate, setSelectedDate] = useState(new Date(2025, 9, 22)); // Set to Oct 22, 2025
-  const [currentMonth, setCurrentMonth] = useState(new Date(2025, 9, 1)); // Set to Oct 2025
+  const { subjects, loading, error } = useSubjects();
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [editModalVisible, setEditModalVisible] = useState(false);
-  
-  const [editingRecord, setEditingRecord] = useState<{
+  const [selectedRecord, setSelectedRecord] = useState<{
     subjectId: string;
-    recordIndex: number;
     date: string;
     status: AttendanceStatus;
-    notes: string;
-    subjectName: string;
   } | null>(null);
 
-  const toastAnim = useRef(new Animated.Value(-100)).current;
+  // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(-100)).current;
 
   const showToast = (message: string) => {
     setToastMessage(message);
-    Animated.timing(toastAnim, { toValue: 50, duration: 300, useNativeDriver: true }).start();
+    Animated.timing(toastAnim, {
+      toValue: 50,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
     setTimeout(() => {
-      Animated.timing(toastAnim, { toValue: -100, duration: 300, useNativeDriver: true }).start(() => {
+      Animated.timing(toastAnim, {
+        toValue: -100,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
         setToastMessage(null);
       });
-    }, 3000);
+    }, 2000);
   };
-  
-  if (subjects.length === 0) {
+
+  // Get filtered subjects based on selection
+  const getFilteredSubjects = () => {
+    if (selectedSubject === 'all') {
+      return subjects;
+    }
+    return subjects.filter(subject => subject.id === selectedSubject);
+  };
+
+  // Get attendance records for selected month
+  const getMonthlyRecords = () => {
+    const filteredSubjects = getFilteredSubjects();
+    const year = selectedMonth.getFullYear();
+    const month = selectedMonth.getMonth();
+
+    const records: Array<{
+      subjectId: string;
+      subjectName: string;
+      date: string;
+      status: AttendanceStatus;
+    }> = [];
+
+    filteredSubjects.forEach(subject => {
+      subject.history.forEach(record => {
+        const recordDate = new Date(record.date);
+        if (recordDate.getFullYear() === year && recordDate.getMonth() === month) {
+          records.push({
+            subjectId: subject.id,
+            subjectName: subject.name,
+            date: record.date,
+            status: record.status,
+          });
+        }
+      });
+    });
+
+    return records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
+
+  // Calculate monthly statistics
+  const getMonthlyStats = () => {
+    const records = getMonthlyRecords();
+    const totalRecords = records.length;
+    const presentCount = records.filter(r => r.status === 'Present' || r.status === 'OD').length;
+    const absentCount = records.filter(r => r.status === 'Absent').length;
+    const percentage = totalRecords > 0 ? Math.round((presentCount / totalRecords) * 100) : 0;
+
+    return { totalRecords, presentCount, absentCount, percentage };
+  };
+
+  // Get month name
+  const getMonthName = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  // Navigate months
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    const newDate = new Date(selectedMonth);
+    if (direction === 'prev') {
+      newDate.setMonth(newDate.getMonth() - 1);
+    } else {
+      newDate.setMonth(newDate.getMonth() + 1);
+    }
+    setSelectedMonth(newDate);
+  };
+
+  // Get status color
+  const getStatusColor = (status: AttendanceStatus) => {
+    switch (status) {
+      case 'Present':
+        return '#10b981';
+      case 'Absent':
+        return '#ef4444';
+      case 'OD':
+        return '#f59e0b';
+      case 'Holiday':
+        return '#3b82f6';
+      default:
+        return '#6b7280';
+    }
+  };
+
+  // Get status icon
+  const getStatusIcon = (status: AttendanceStatus) => {
+    switch (status) {
+      case 'Present':
+        return 'checkmark-circle';
+      case 'Absent':
+        return 'close-circle';
+      case 'OD':
+        return 'briefcase';
+      case 'Holiday':
+        return 'home';
+      default:
+        return 'help-circle';
+    }
+  };
+
+  const monthlyRecords = getMonthlyRecords();
+  const monthlyStats = getMonthlyStats();
+
+  if (loading) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-        <View style={styles.errorContainer}>
-          <Ionicons name="book-outline" size={64} color="#4b5563" />
-          <Text style={styles.errorText}>No subjects found</Text>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
+          <Text style={styles.loadingText}>Loading history...</Text>
         </View>
       </View>
     );
   }
 
-  const getMonthStats = (date: Date) => {
-    const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-    const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-    
-    const subjectsToProcess = selectedView === 'all' 
-      ? subjects 
-      : subjects.filter(s => s.id === selectedView);
-
-    let totalAttended = 0;
-    let totalClasses = 0;
-
-    subjectsToProcess.forEach(subject => {
-        const monthRecords = subject.history.filter(record => {
-            const recordDate = new Date(record.date);
-            return recordDate >= monthStart && recordDate <= monthEnd;
-        });
-        totalAttended += monthRecords.filter(r => r.status === 'Present' || r.status === 'On Duty').length;
-        totalClasses += monthRecords.filter(r => r.status === 'Present' || r.status === 'Absent').length;
-    });
-
-    return {
-      attended: totalAttended,
-      total: totalClasses,
-      percentage: totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 100) : 0,
-    };
-  };
-
-  const getDayStatus = (date: Date) => {
-    if (date.getDay() === 0) return 'absent'; // Sunday is a holiday
-
-    const subjectsToProcess = selectedView === 'all' 
-      ? subjects 
-      : subjects.filter(s => s.id === selectedView);
-    
-    const dateStr = date.toISOString().split('T')[0];
-    let hasAbsence = false;
-    let hasClass = false;
-
-    for (const subject of subjectsToProcess) {
-        for (const record of subject.history) {
-            if (record.date === dateStr) {
-                hasClass = true;
-                if (record.status === 'Absent') {
-                    hasAbsence = true;
-                    break;
-                }
-            }
-        }
-        if (hasAbsence) break;
-    }
-
-    if (hasAbsence) return 'absent';
-    if (hasClass) return 'present';
-    return 'none';
-  };
-  
-  const getAttendanceForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
-    const records: (AttendanceRecord & { subjectName: string; subjectId: string; timeSlot: string})[] = [];
-    
-    subjects.forEach(subject => {
-        subject.history.forEach(record => {
-            if (record.date === dateStr) {
-                records.push({ ...record, subjectName: subject.name, subjectId: subject.id, timeSlot: subject.timeSlot });
-            }
-        });
-    });
-    return records;
-  };
-
-  const previousMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
-  const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
-  const jumpToToday = () => {
-      const today = new Date(2025, 9, 22);
-      setCurrentMonth(today);
-      setSelectedDate(today);
-  };
-
-  const getCalendarDays = () => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const startPadding = firstDay.getDay();
-    const days: (Date | null)[] = Array(startPadding).fill(null);
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(new Date(year, month, i));
-    }
-    return days;
-  };
-
-  const handleEditRecord = (record: any) => {
-    const subject = subjects.find(s => s.id === record.subjectId);
-    if(!subject) return;
-
-    const recordIndex = subject.history.findIndex(r => r.date === record.date);
-
-    setEditingRecord({
-        subjectId: record.subjectId,
-        recordIndex: recordIndex,
-        date: record.date,
-        status: record.status,
-        notes: '',
-        subjectName: record.subjectName,
-    });
-    setEditModalVisible(true);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingRecord) return;
-    updateAttendance(editingRecord.subjectId, editingRecord.recordIndex, editingRecord.status);
-    setEditModalVisible(false);
-    showToast('Attendance updated successfully!');
-  };
-
-  const monthStats = getMonthStats(currentMonth);
-  const calendarDays = getCalendarDays();
-  const selectedDateAttendance = getAttendanceForDate(selectedDate);
-  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const isToday = (date: Date) => new Date(2025, 9, 22).toDateString() === date.toDateString();
-  const isSameDate = (date1: Date, date2: Date) => date1.toDateString() === date2.toDateString();
-  
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
 
+      {/* Toast */}
       {toastMessage && (
-        <Animated.View style={[ styles.toastContainer, { transform: [{ translateY: toastAnim }] } ]}>
+        <Animated.View
+          style={[
+            styles.toastContainer,
+            { transform: [{ translateY: toastAnim }] },
+          ]}
+        >
           <Ionicons name="checkmark-circle" size={22} color="#ffffff" />
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       )}
 
-      <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
-      </View>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Attendance History</Text>
+          <Text style={styles.subtitle}>Track your attendance over time</Text>
+        </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.subjectSelector}>
-          <Text style={styles.selectorLabel}>Select Subject</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectChips}>
+        {/* Error State */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={24} color="#ef4444" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Month Navigation */}
+        <View style={styles.monthNavigation}>
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => navigateMonth('prev')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="chevron-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          
+          <Text style={styles.monthText}>{getMonthName(selectedMonth)}</Text>
+          
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => navigateMonth('next')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="chevron-forward" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Monthly Statistics */}
+        <View style={styles.statsCard}>
+          <Text style={styles.statsTitle}>Monthly Overview</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{monthlyStats.percentage}%</Text>
+              <Text style={styles.statLabel}>Attendance</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{monthlyStats.presentCount}</Text>
+              <Text style={styles.statLabel}>Present</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{monthlyStats.absentCount}</Text>
+              <Text style={styles.statLabel}>Absent</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{monthlyStats.totalRecords}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Subject Filter */}
+        <View style={styles.filterSection}>
+          <Text style={styles.filterTitle}>Filter by Subject</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterContainer}
+          >
             <TouchableOpacity
-              style={[styles.subjectChip, selectedView === 'all' && styles.subjectChipActive]}
-              onPress={() => setSelectedView('all')}
+              style={[
+                styles.filterChip,
+                selectedSubject === 'all' && styles.filterChipActive,
+              ]}
+              onPress={() => setSelectedSubject('all')}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.subjectChipText, selectedView === 'all' && styles.subjectChipTextActive]}>All Subjects</Text>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedSubject === 'all' && styles.filterChipTextActive,
+                ]}
+              >
+                All Subjects
+              </Text>
             </TouchableOpacity>
             {subjects.map(subject => (
               <TouchableOpacity
                 key={subject.id}
-                style={[styles.subjectChip, selectedView === subject.id && styles.subjectChipActive]}
-                onPress={() => setSelectedView(subject.id)}
+                style={[
+                  styles.filterChip,
+                  selectedSubject === subject.id && styles.filterChipActive,
+                ]}
+                onPress={() => setSelectedSubject(subject.id)}
+                activeOpacity={0.7}
               >
-                <Text style={[styles.subjectChipText, selectedView === subject.id && styles.subjectChipTextActive]}>{subject.name}</Text>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedSubject === subject.id && styles.filterChipTextActive,
+                  ]}
+                >
+                  {subject.name}
+                </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
 
-        <View style={styles.analyticsCard}>
-          <View>
-            <Text style={styles.analyticsTitle}>{monthName.split(' ')[0]}'s Attendance</Text>
-            <Text style={styles.analyticsPercentage}>{monthStats.percentage}%</Text>
-          </View>
-          <View style={{alignItems: 'flex-end'}}>
-            <Text style={styles.analyticsRatio}>{monthStats.attended}/{monthStats.total}</Text>
-            <Text style={styles.analyticsLabel}>Classes Attended</Text>
-          </View>
-        </View>
-
-        <View style={styles.calendarCard}>
-          <View style={styles.calendarHeader}>
-            <TouchableOpacity onPress={previousMonth} style={styles.navBtn}>
-              <Ionicons name="chevron-back" size={24} color="#ffffff" />
-            </TouchableOpacity>
-            <Text style={styles.calendarTitle}>{monthName}</Text>
-            <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
-              <Ionicons name="chevron-forward" size={24} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.dayLabelsRow}>
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => <Text key={i} style={styles.dayLabelText}>{day}</Text>)}
-          </View>
-
-          <View style={styles.calendarGrid}>
-            {calendarDays.map((day, index) => {
-              if (!day) return <View key={index} style={styles.dayCell} />;
-              const dayStatus = getDayStatus(day);
-              return (
-                <TouchableOpacity key={index} style={[styles.dayCell, isSameDate(day, selectedDate) && styles.calendarDaySelected]} onPress={() => setSelectedDate(day)}>
-                  <Text style={[
-                      styles.calendarDayText,
-                      isToday(day) && styles.calendarDayToday,
-                      dayStatus === 'present' && { color: '#10b981' },
-                      dayStatus === 'absent' && { color: '#ef4444' },
-                  ]}>
-                    {day.getDate()}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <TouchableOpacity style={styles.jumpButton} onPress={jumpToToday}>
-            <Text style={styles.jumpButtonText}>Jump to Today</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.dailySection}>
-          <Text style={styles.sectionTitle}>Today's Classes</Text>
-          {selectedDateAttendance.length > 0 ? (
-            selectedDateAttendance.map((record, index) => (
-              <View key={index} style={styles.attendanceItem}>
-                <Text style={styles.attendanceSubject}>{record.subjectName}</Text>
-                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <Text style={[styles.statusBadge, {backgroundColor: record.status === 'Present' || record.status === 'On Duty' ? '#10b98120' : '#ef444420', color: record.status === 'Present' || record.status === 'On Duty' ? '#10b981' : '#ef4444'}]}>{record.status}</Text>
-                    <TouchableOpacity style={{marginLeft: 10}} onPress={() => handleEditRecord(record)}>
-                        <Ionicons name="pencil" size={18} color="#8b5cf6"/>
-                    </TouchableOpacity>
-                </View>
-              </View>
-            ))
-          ) : (
-            <View style={styles.noClasses}>
+        {/* Attendance Records */}
+        <View style={styles.recordsSection}>
+          <Text style={styles.recordsTitle}>Attendance Records</Text>
+          {monthlyRecords.length === 0 ? (
+            <View style={styles.emptyContainer}>
               <Ionicons name="calendar-outline" size={48} color="#4b5563" />
-              <Text style={styles.noClassesText}>No classes on this day</Text>
+              <Text style={styles.emptyTitle}>No Records Found</Text>
+              <Text style={styles.emptySubtitle}>
+                No attendance records for {getMonthName(selectedMonth)}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.recordsList}>
+              {monthlyRecords.map((record, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.recordCard}
+                  onPress={() => {
+                    setSelectedRecord({
+                      subjectId: record.subjectId,
+                      date: record.date,
+                      status: record.status,
+                    });
+                    setEditModalVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.recordLeft}>
+                    <View
+                      style={[
+                        styles.statusIndicator,
+                        { backgroundColor: getStatusColor(record.status) },
+                      ]}
+                    >
+                      <Ionicons
+                        name={getStatusIcon(record.status) as any}
+                        size={16}
+                        color="#ffffff"
+                      />
+                    </View>
+                    <View style={styles.recordInfo}>
+                      <Text style={styles.recordSubject}>{record.subjectName}</Text>
+                      <Text style={styles.recordDate}>
+                        {new Date(record.date).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.recordRight}>
+                    <Text
+                      style={[
+                        styles.recordStatus,
+                        { color: getStatusColor(record.status) },
+                      ]}
+                    >
+                      {record.status}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color="#6b7280" />
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </View>
+
+        <View style={styles.bottomPadding} />
       </ScrollView>
 
-      <Modal visible={editModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+              <Ionicons name="close" size={24} color="#6b7280" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Attendance</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Attendance</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <Ionicons name="close" size={28} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-            {editingRecord && (
-              <View style={styles.modalBody}>
-                <Text style={styles.modalSubtitle}>{editingRecord.subjectName}</Text>
-                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Status</Text>
-                  <View style={styles.statusOptions}>
-                    {ATTENDANCE_STATUSES.map(status => {
-                      const isSelected = editingRecord.status === status;
-                      return (
-                        <TouchableOpacity
-                          key={status}
-                          style={[styles.statusOption, isSelected && { borderColor: '#8b5cf6' }]}
-                          onPress={() => setEditingRecord(prev => prev ? {...prev, status} : null)}
-                        >
-                          <Text style={[styles.statusOptionText, isSelected && { color: '#8b5cf6' }]}>{status}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
+            {selectedRecord && (
+              <>
+                <Text style={styles.modalText}>
+                  Subject: {subjects.find(s => s.id === selectedRecord.subjectId)?.name}
+                </Text>
+                <Text style={styles.modalText}>
+                  Date: {new Date(selectedRecord.date).toLocaleDateString()}
+                </Text>
+                <Text style={styles.modalText}>
+                  Current Status: {selectedRecord.status}
+                </Text>
+                <Text style={styles.modalNote}>
+                  Note: Attendance editing will be available in a future update.
+                </Text>
+              </>
             )}
-             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveEdit}>
-                <Text style={styles.saveBtnText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -406,58 +400,263 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  toastContainer: { position: 'absolute', top: 0, left: 20, right: 20, padding: 16, borderRadius: 12, backgroundColor: '#10b981', flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 1000 },
-  toastText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 10 },
-  title: { fontSize: 28, fontWeight: '700', color: '#ffffff' },
-  subjectSelector: { paddingHorizontal: 20, marginVertical: 10 },
-  selectorLabel: { fontSize: 14, fontWeight: '600', color: '#9ca3af', marginBottom: 12 },
-  subjectChips: { gap: 12 },
-  subjectChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#1f2937' },
-  subjectChipActive: { backgroundColor: '#8b5cf6' },
-  subjectChipText: { fontSize: 14, fontWeight: '600', color: '#9ca3af' },
-  subjectChipTextActive: { color: '#ffffff' },
-  analyticsCard: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#8b5cf6', marginHorizontal: 20, padding: 16, borderRadius: 16 },
-  analyticsTitle: { fontSize: 14, color: '#e5e7eb' },
-  analyticsPercentage: { fontSize: 40, fontWeight: '700', color: '#ffffff' },
-  analyticsRatio: { fontSize: 32, fontWeight: '700', color: '#ffffff' },
-  analyticsLabel: { fontSize: 12, color: '#e5e7eb' },
-  calendarCard: { backgroundColor: '#1a1a1a', marginHorizontal: 20, marginTop: 20, padding: 20, borderRadius: 16 },
-  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  navBtn: { padding: 5, backgroundColor: '#262626', borderRadius: 999 },
-  calendarTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
-  dayLabelsRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
-  dayLabelText: { fontSize: 12, fontWeight: '600', color: '#6b7280' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center' },
-  calendarDayText: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
-  calendarDaySelected: { backgroundColor: '#8b5cf6', borderRadius: 12 },
-  calendarDayToday: { color: '#8b5cf6', fontWeight: 'bold' },
-  jumpButton: { backgroundColor: '#8b5cf6', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 16 },
-  jumpButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-  dailySection: { paddingHorizontal: 20, marginTop: 20, marginBottom: 100 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 16 },
-  attendanceItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a1a1a', padding: 16, borderRadius: 12, marginBottom: 10, borderLeftWidth: 4, borderLeftColor: '#10b981' },
-  attendanceSubject: { color: 'white', fontWeight: '600'},
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, fontWeight: '600', fontSize: 12, overflow: 'hidden' },
-  noClasses: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 48, alignItems: 'center' },
-  noClassesText: { color: '#6b7280', fontSize: 14, marginTop: 12 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { fontSize: 18, color: '#ffffff', marginTop: 16 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#262626' },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#ffffff' },
-  modalBody: { padding: 20 },
-  modalSubtitle: { fontSize: 16, color: '#e5e7eb', marginBottom: 20, fontWeight: '600'},
-  inputGroup: { marginBottom: 24 },
-  inputLabel: { fontSize: 14, fontWeight: '600', color: '#9ca3af', marginBottom: 12 },
-  statusOptions: { flexDirection: 'row', gap: 12 },
-  statusOption: { flex: 1, padding: 14, backgroundColor: '#262626', borderRadius: 12, borderWidth: 2, borderColor: '#3a3a3a', alignItems: 'center' },
-  statusOptionText: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
-  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#262626' },
-  saveBtn: { paddingVertical: 14, borderRadius: 12, backgroundColor: '#8b5cf6', alignItems: 'center' },
-  saveBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+  },
+  loadingText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '500',
+    marginTop: 16,
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#10b981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  toastText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+    flex: 1,
+  },
+  monthNavigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  navButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  statsCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 16,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  filterSection: {
+    marginBottom: 24,
+  },
+  filterTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 12,
+  },
+  filterContainer: {
+    paddingRight: 20,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#262626',
+    marginRight: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#8b5cf6',
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: '#ffffff',
+  },
+  recordsSection: {
+    marginBottom: 24,
+  },
+  recordsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 16,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  recordsList: {
+    gap: 12,
+  },
+  recordCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  recordLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  recordInfo: {
+    flex: 1,
+  },
+  recordSubject: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  recordDate: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  recordRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordStatus: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  bottomPadding: {
+    height: 100,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#262626',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  modalContent: {
+    padding: 20,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#ffffff',
+    marginBottom: 12,
+  },
+  modalNote: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 20,
+  },
 });
-
