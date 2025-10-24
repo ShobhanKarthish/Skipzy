@@ -77,21 +77,25 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   useEffect(() => {
     const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        await loadUserProfile();
+        // Load user profile in background without blocking UI
+        loadUserProfile();
       } else if (event === 'SIGNED_OUT') {
         setUserProfile(null);
         setError(null);
       }
     });
 
-    // Load data on mount
+    // Load data on mount - parallel execution for better performance
     const initializeData = async () => {
-      await loadLocalPreferences();
+      // Load local preferences and check auth session in parallel
+      const [sessionResult] = await Promise.all([
+        authService.getSession(),
+        loadLocalPreferences()
+      ]);
       
-      // Check if user is already signed in
-      const { data } = await authService.getSession();
-      if (data?.session) {
-        await loadUserProfile();
+      // Load user profile if signed in
+      if (sessionResult.data?.session) {
+        loadUserProfile();
       }
       
       setIsLoaded(true);

@@ -89,8 +89,10 @@ export default function AuthScreen() {
         showToast(error.message, 'error');
         return;
       }
-      showToast('Welcome back!', 'success');
+      
+      // Navigate immediately for better UX
       router.replace('/home' as Href);
+      showToast('Welcome back!', 'success');
       console.log('Signed in user:', data.user);
     } catch (err) {
       console.error('Sign in error:', err);
@@ -110,11 +112,13 @@ export default function AuthScreen() {
         showToast(error.message, 'error');
         return;
       }
+      
+      // Navigate immediately for better UX
+      router.replace('/home' as Href);
       showToast('Account created! Check your email to confirm.', 'success');
       setName('');
       setEmail('');
       setPassword('');
-      router.replace('/home' as Href);
       console.log('Signed up user:', data.user);
     } catch (err) {
       console.error('Sign up error:', err);

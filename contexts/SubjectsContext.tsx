@@ -22,14 +22,24 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [subjects, setSubjects] = useState<AppSubject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
 
-  // Load subjects from Supabase
-  const loadSubjects = async () => {
+  // Load subjects from Supabase with simple caching
+  const loadSubjects = async (forceRefresh = false) => {
+    const now = Date.now();
+    const CACHE_DURATION = 30000; // 30 seconds cache
+    
+    // Use cache if data is fresh and not forcing refresh
+    if (!forceRefresh && subjects.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
       const data = await subjectService.getSubjects();
       setSubjects(data);
+      setLastFetchTime(now);
     } catch (err) {
       console.error('Error loading subjects:', err);
       setError('Failed to load subjects');
@@ -42,7 +52,8 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        await loadSubjects();
+        // Load subjects in background without blocking UI
+        loadSubjects();
       } else if (event === 'SIGNED_OUT') {
         setSubjects([]);
         setError(null);
@@ -53,7 +64,7 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     const checkAuthAndLoad = async () => {
       const { data } = await authService.getSession();
       if (data?.session) {
-        await loadSubjects();
+        loadSubjects();
       }
     };
     
@@ -70,8 +81,23 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       const subjectId = await subjectService.createSubject(subjectData);
       
       if (subjectId) {
-        // Refresh subjects to get the new one
-        await loadSubjects();
+        // Create a temporary subject object for immediate UI update
+        const tempSubject = {
+          id: subjectId,
+          name: subjectData.subject_name,
+          staffName: subjectData.staff_name || '',
+          minAttendance: subjectData.required_attendance_percentage,
+          days: [], // Will be populated when we refresh
+          timeSlot: '',
+          classType: subjectData.subject_type,
+          history: [],
+        };
+        
+        // Add to local state immediately for better UX
+        setSubjects(prev => [...prev, tempSubject]);
+        
+        // Refresh subjects in background to get complete data
+        loadSubjects();
         return true;
       }
       return false;
@@ -215,7 +241,7 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const refreshSubjects = async () => {
-    await loadSubjects();
+    await loadSubjects(true); // Force refresh
   };
 
   return (

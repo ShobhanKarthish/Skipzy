@@ -1,10 +1,10 @@
 import {
-    AppAttendanceRecord,
-    AppSubject,
-    AppUserProfile,
-    CreateAttendanceRecordData,
-    CreateSubjectData,
-    UpdateSubjectData
+  AppAttendanceRecord,
+  AppSubject,
+  AppUserProfile,
+  CreateAttendanceRecordData,
+  CreateSubjectData,
+  UpdateSubjectData
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
@@ -97,16 +97,10 @@ export const subjectService = {
 
       if (userError || !userData) return [];
 
-      // Get subjects with timetable slots
+      // Get subjects first
       const { data: subjects, error: subjectsError } = await supabase
         .from('subjects')
-        .select(`
-          *,
-          timetable_slots (
-            day_of_week,
-            slot_number
-          )
-        `)
+        .select('*')
         .eq('user_id', userData.id)
         .order('created_at', { ascending: true });
 
@@ -115,25 +109,36 @@ export const subjectService = {
         return [];
       }
 
-      // Get attendance records for all subjects
-      const subjectIds = subjects.map(s => s.id);
-      const { data: attendanceRecords, error: attendanceError } = await supabase
-        .from('attendance_records')
-        .select('subject_id, date, status, notes')
-        .in('subject_id', subjectIds)
-        .order('date', { ascending: false });
-
-      if (attendanceError) {
-        console.error('Error fetching attendance records:', attendanceError);
+      // If no subjects, return empty array immediately
+      if (!subjects || subjects.length === 0) {
+        return [];
       }
 
-      // Transform data to AppSubject format
-      return subjects.map(subject => {
-        const timetableSlots = subject.timetable_slots || [];
-        const days = timetableSlots.map((slot: any) => dayNumberToName(slot.day_of_week));
-        const timeSlot = timetableSlots.length > 0 ? slotNumberToName(timetableSlots[0].slot_number) : '';
+      // Execute timetable slots and attendance records queries in parallel
+      const subjectIds = subjects.map(s => s.id);
+      const [timetableSlotsResult, attendanceRecordsResult] = await Promise.all([
+        supabase
+          .from('timetable_slots')
+          .select('subject_id, day_of_week, slot_number')
+          .in('subject_id', subjectIds),
+        supabase
+          .from('attendance_records')
+          .select('subject_id, date, status, notes')
+          .in('subject_id', subjectIds)
+          .order('date', { ascending: false })
+      ]);
 
-        const subjectAttendanceRecords = (attendanceRecords || [])
+      const timetableSlots = timetableSlotsResult.data || [];
+      const attendanceRecords = attendanceRecordsResult.data || [];
+
+      // Transform data to AppSubject format
+      const transformedSubjects = subjects.map(subject => {
+        // Get timetable slots for this subject
+        const subjectTimetableSlots = timetableSlots.filter(slot => slot.subject_id === subject.id);
+        const days = subjectTimetableSlots.map(slot => dayNumberToName(slot.day_of_week));
+        const timeSlot = subjectTimetableSlots.length > 0 ? slotNumberToName(subjectTimetableSlots[0].slot_number) : '';
+
+        const subjectAttendanceRecords = attendanceRecords
           .filter(record => record.subject_id === subject.id)
           .map(record => ({
             date: record.date,
@@ -152,6 +157,8 @@ export const subjectService = {
           history: subjectAttendanceRecords,
         };
       });
+      
+      return transformedSubjects;
     } catch (error) {
       console.error('Error in getSubjects:', error);
       return [];
@@ -452,6 +459,24 @@ export const authService = {
       });
 
       if (error) throw error;
+
+      // Create user profile immediately after successful signup
+      if (data.user) {
+        try {
+          await supabase
+            .from('users')
+            .insert({
+              auth_id: data.user.id,
+              name: name,
+              email: email,
+              attendance_target: 75, // Default value
+            });
+        } catch (profileError) {
+          console.error('Error creating user profile:', profileError);
+          // Don't fail the signup if profile creation fails
+        }
+      }
+
       return { data, error: null };
     } catch (error) {
       console.error('Error in signUp:', error);
