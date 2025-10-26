@@ -212,7 +212,9 @@ export default function SubjectsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>My Subjects</Text>
-          <Text style={styles.subtitle}>Third Year BDS - Current Month</Text>
+          <Text style={styles.subtitle}>
+            Third Year BDS - {new Date(selectedYear, selectedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </Text>
         </View>
       </View>
 

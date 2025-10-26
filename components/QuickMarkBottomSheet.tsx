@@ -16,20 +16,22 @@ import {
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.5;
 
-type AttendanceStatus = 'Present' | 'Absent' | 'On Duty' | 'Holiday';
+type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
 
 interface QuickMarkBottomSheetProps {
   visible: boolean;
   subject: AppSubject | null;
+  selectedDate?: Date | null;
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-const ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'On Duty', 'Holiday'];
+const ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 'Holiday'];
 
 const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
   visible,
   subject,
+  selectedDate,
   onClose,
   onSuccess,
 }) => {
@@ -118,18 +120,19 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     }
 
     setSaving(true);
-    const today = new Date().toISOString().split('T')[0];
+    // Use selectedDate if provided, otherwise use today
+    const dateToMark = selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
     
-    // Check if already marked today
-    const alreadyMarked = subject.history.some(record => record.date === today);
+    // Check if already marked
+    const alreadyMarked = subject.history.some(record => record.date === dateToMark);
     if (alreadyMarked) {
-      showToast('Attendance already marked for today');
+      showToast('Attendance already marked for this date');
       setSaving(false);
       return;
     }
 
     const record: AppAttendanceRecord = {
-      date: today,
+      date: dateToMark,
       status: selectedStatus,
       notes: null,
     };
@@ -155,7 +158,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
         return { icon: 'checkmark-circle' as const, color: '#10b981' };
       case 'Absent':
         return { icon: 'close-circle' as const, color: '#ef4444' };
-      case 'On Duty':
+      case 'OD':
         return { icon: 'briefcase' as const, color: '#f59e0b' };
       case 'Holiday':
         return { icon: 'home' as const, color: '#3b82f6' };
@@ -163,6 +166,8 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
   };
 
   if (!subject) return null;
+
+  const displayDate = selectedDate || new Date();
 
   return (
     <Modal
@@ -223,7 +228,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
           <View style={styles.dateContainer}>
             <Ionicons name="calendar-outline" size={20} color="#8b5cf6" />
             <Text style={styles.dateText}>
-              {new Date().toLocaleDateString('en-US', {
+              {displayDate.toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
