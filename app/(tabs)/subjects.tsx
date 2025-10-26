@@ -1,37 +1,22 @@
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
-import { AppSubject, CreateSubjectData } from '@/types/supabase';
+import { AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
     Animated,
     Easing,
-    Modal,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 export default function SubjectsScreen() {
-  const { subjects, loading, error, addSubject } = useSubjects();
-  const [modalVisible, setModalVisible] = useState(false);
-  const router = useRouter();
-  const [newSubject, setNewSubject] = useState({
-    name: '',
-    staffName: '',
-    minAttendance: '75',
-    days: [] as string[],
-    timeSlot: '',
-    classType: 'Lecture' as 'Lecture' | 'Lab' | 'OPD',
-  });
-
-  // Quick mark state
+  const { subjects, loading, error, selectedYear, selectedMonth } = useSubjects();
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
 
@@ -69,7 +54,7 @@ export default function SubjectsScreen() {
   };
 
   const getStats = (history: any[]) => {
-    const attended = history.filter(h => h.status === 'Present' || h.status === 'On Duty').length;
+    const attended = history.filter(h => h.status === 'Present' || h.status === 'OD').length;
     const total = history.filter(h => h.status === 'Present' || h.status === 'Absent').length;
     const absent = history.filter(h => h.status === 'Absent').length;
     return { attended, total, absent };
@@ -97,136 +82,98 @@ export default function SubjectsScreen() {
   };
 
   const renderSubjectCard = (subject: AppSubject) => {
-  const { attended, total } = getStats(subject.history);
-  const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
-  const safeToSkip = calculateSafeToSkip(subject);
-  const colors = getStatusColor(percentage, subject.minAttendance, safeToSkip);
+    const { attended, total } = getStats(subject.history);
+    const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+    const safeToSkip = calculateSafeToSkip(subject);
+    const colors = getStatusColor(percentage, subject.minAttendance, safeToSkip);
 
-  const radius = 28;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+    const radius = 28;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
-  return (
-    <View key={subject.id} style={styles.subjectCard}>
-      <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <View style={styles.cardTitleSection}>
-            <Text style={styles.subjectName}>{subject.name}</Text>
-            <View style={styles.subjectMeta}>
-              <Ionicons name="book-outline" size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{subject.classType}</Text>
-              <Text style={styles.metaDivider}>•</Text>
-              <Ionicons name="person-outline" size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{subject.staffName}</Text>
+    return (
+      <View key={subject.id} style={styles.subjectCard}>
+        <View style={styles.cardContent}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleSection}>
+              <Text style={styles.subjectName}>{subject.name}</Text>
+              <View style={styles.subjectMeta}>
+                <Ionicons name="book-outline" size={14} color="#6b7280" />
+                <Text style={styles.metaText}>{subject.classType}</Text>
+                {subject.staffName && (
+                  <>
+                    <Text style={styles.metaDivider}>•</Text>
+                    <Ionicons name="person-outline" size={14} color="#6b7280" />
+                    <Text style={styles.metaText}>{subject.staffName}</Text>
+                  </>
+                )}
+              </View>
+            </View>
+            
+            <View style={styles.progressRing}>
+              <Svg width={64} height={64}>
+                <Circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  stroke="#2a2a2a"
+                  strokeWidth="4"
+                  fill="transparent"
+                />
+                <Circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  stroke={colors.ring}
+                  strokeWidth="4"
+                  fill="transparent"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  rotation="-90"
+                  origin="32, 32"
+                />
+              </Svg>
+              <View style={styles.progressText}>
+                <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
+              </View>
             </View>
           </View>
-          
-          <View style={styles.progressRing}>
-            <Svg width={64} height={64}>
-              <Circle
-                cx="32"
-                cy="32"
-                r={radius}
-                stroke="#2a2a2a"
-                strokeWidth="4"
-                fill="transparent"
-              />
-              <Circle
-                cx="32"
-                cy="32"
-                r={radius}
-                stroke={colors.ring}
-                strokeWidth="4"
-                fill="transparent"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-                rotation="-90"
-                origin="32, 32"
-              />
-            </Svg>
-            <View style={styles.progressText}>
-              <Text style={[styles.percentage, { color: colors.text }]}>{percentage}%</Text>
+
+          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Attended</Text>
+              <Text style={styles.statValue}>{attended}/{total}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Can Skip</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Target</Text>
+              <Text style={styles.statValue}>{subject.minAttendance}%</Text>
             </View>
           </View>
-        </View>
 
-        <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Attended</Text>
-            <Text style={styles.statValue}>{attended}/{total}</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Can Skip</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{safeToSkip} classes</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Target</Text>
-            <Text style={styles.statValue}>{subject.minAttendance}%</Text>
+          <View style={styles.scheduleRow}>
+            <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+            <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
           </View>
         </View>
 
-        <View style={styles.scheduleRow}>
-          <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-          <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
-        </View>
+        {/* Quick Mark Button - Full Width */}
+        <TouchableOpacity
+          style={styles.quickMarkBtnFull}
+          onPress={() => handleQuickMark(subject)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+          <Text style={styles.quickMarkText}>Quick Mark</Text>
+        </TouchableOpacity>
       </View>
-
-      {/* Quick Mark Button - Full Width */}
-      <TouchableOpacity
-        style={styles.quickMarkBtnFull}
-        onPress={() => handleQuickMark(subject)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-        <Text style={styles.quickMarkText}>Quick Mark</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-
-  const handleAddSubject = async () => {
-    if (!newSubject.name.trim()) {
-      showToast('Please enter a subject name', 'error');
-      return;
-    }
-
-    const subjectData: CreateSubjectData = {
-      subject_name: newSubject.name.trim(),
-      staff_name: newSubject.staffName.trim() || null,
-      subject_type: newSubject.classType,
-      required_attendance_percentage: parseInt(newSubject.minAttendance) || 75,
-      timetable_slots: [], // For now, empty - can be added later
-    };
-
-    const success = await addSubject(subjectData);
-    
-    if (success) {
-      setModalVisible(false);
-      setNewSubject({
-        name: '',
-        staffName: '',
-        minAttendance: '75',
-        days: [],
-        timeSlot: '',
-        classType: 'Lecture',
-      });
-      showToast('Subject added successfully!', 'success');
-    } else {
-      showToast('Failed to add subject. Please try again.', 'error');
-    }
-  };
-
-  const toggleDay = (day: string) => {
-    setNewSubject(prev => ({
-      ...prev,
-      days: prev.days.includes(day)
-        ? prev.days.filter(d => d !== day)
-        : [...prev.days, day]
-    }));
+    );
   };
 
   // Show loading state
@@ -265,7 +212,7 @@ export default function SubjectsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>My Subjects</Text>
-          <Text style={styles.subtitle}>Track attendance for all your subjects</Text>
+          <Text style={styles.subtitle}>Third Year BDS - Current Month</Text>
         </View>
       </View>
 
@@ -287,153 +234,16 @@ export default function SubjectsScreen() {
             <View style={styles.emptyIcon}>
               <Ionicons name="book-outline" size={64} color="#4b5563" />
             </View>
-            <Text style={styles.emptyTitle}>No Subjects Yet</Text>
+            <Text style={styles.emptyTitle}>No Subjects Found</Text>
             <Text style={styles.emptySubtitle}>
-              Add your first subject to start tracking attendance
+              The timetable will appear once the database is set up
             </Text>
-            <TouchableOpacity 
-              style={styles.emptyButton}
-              onPress={() => setModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add" size={20} color="#ffffff" />
-              <Text style={styles.emptyButtonText}>Add Subject</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           subjects.map(renderSubjectCard)
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add" size={32} color="#ffffff" />
-      </TouchableOpacity>
-
-      {/* Add Subject Modal */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Subject</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={28} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Subject Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter subject name"
-                  placeholderTextColor="#6b7280"
-                  value={newSubject.name}
-                  onChangeText={(text) => setNewSubject({...newSubject, name: text})}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Staff Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter staff name"
-                  placeholderTextColor="#6b7280"
-                  value={newSubject.staffName}
-                  onChangeText={(text) => setNewSubject({...newSubject, staffName: text})}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Time Slot</Text>
-                <View style={styles.buttonGrid}>
-                  {['Slot 1', 'Slot 2', 'Slot 3', 'Slot 4'].map(slot => (
-                    <TouchableOpacity
-                      key={slot}
-                      style={[styles.optionBtn, newSubject.timeSlot === slot && styles.optionBtnActive]}
-                      onPress={() => setNewSubject({...newSubject, timeSlot: slot})}
-                    >
-                      <Text style={[styles.optionText, newSubject.timeSlot === slot && styles.optionTextActive]}>
-                        {slot}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Days of Week</Text>
-                <View style={styles.buttonGrid}>
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                    <TouchableOpacity
-                      key={day}
-                      style={[styles.optionBtn, newSubject.days.includes(day) && styles.optionBtnActive]}
-                      onPress={() => toggleDay(day)}
-                    >
-                      <Text style={[styles.optionText, newSubject.days.includes(day) && styles.optionTextActive]}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Class Type</Text>
-                <View style={styles.buttonGrid}>
-                  {(['Lecture', 'Lab', 'OPD'] as const).map(type => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.optionBtn, newSubject.classType === type && styles.optionBtnActive]}
-                      onPress={() => setNewSubject({...newSubject, classType: type})}
-                    >
-                      <Text style={[styles.optionText, newSubject.classType === type && styles.optionTextActive]}>
-                        {type}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Required %</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., 75"
-                  placeholderTextColor="#6b7280"
-                  keyboardType="number-pad"
-                  value={newSubject.minAttendance}
-                  onChangeText={(text) => setNewSubject({...newSubject, minAttendance: text})}
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={handleAddSubject}
-              >
-                <Text style={styles.addBtnText}>Add Subject</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Quick Mark Bottom Sheet */}
       <QuickMarkBottomSheet
@@ -599,7 +409,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
   },
-
   quickMarkBtnFull: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -615,126 +424,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  // END NEW STYLES
-  fab: {
-    position: 'absolute',
-    bottom: 100,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#8b5cf6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
   bottomPadding: {
     height: 100,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#1a1a1a',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#262626',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  modalScroll: {
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 24,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9ca3af',
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: '#262626',
-    borderWidth: 1,
-    borderColor: '#3a3a3a',
-    borderRadius: 12,
-    padding: 14,
-    color: '#ffffff',
-    fontSize: 16,
-  },
-  buttonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  optionBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#262626',
-    borderWidth: 1,
-    borderColor: '#3a3a3a',
-  },
-  optionBtnActive: {
-    backgroundColor: '#8b5cf6',
-    borderColor: '#8b5cf6',
-  },
-  optionText: {
-    color: '#9ca3af',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  optionTextActive: {
-    color: '#ffffff',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#262626',
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#262626',
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  addBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#8b5cf6',
-    alignItems: 'center',
-  },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -786,19 +477,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 20,
-  },
-  emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#8b5cf6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  emptyButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

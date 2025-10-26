@@ -68,32 +68,9 @@ export interface AppUserProfile {
   email: string;
   attendanceTarget: number;
   profilePictureUrl: string | null;
-  // Additional fields for the app
-  course?: string;
-  year?: string;
-  institution?: string;
-  studentId?: string;
 }
 
 // Helper types for API responses
-export interface CreateSubjectData {
-  subject_name: string;
-  staff_name: string | null;
-  subject_type: 'Lecture' | 'Lab' | 'OPD';
-  required_attendance_percentage: number;
-  timetable_slots: {
-    day_of_week: number;
-    slot_number: number;
-  }[];
-}
-
-export interface UpdateSubjectData {
-  subject_name?: string;
-  staff_name?: string | null;
-  subject_type?: 'Lecture' | 'Lab' | 'OPD';
-  required_attendance_percentage?: number;
-}
-
 export interface CreateAttendanceRecordData {
   subject_id: string;
   date: string;
@@ -101,3 +78,33 @@ export interface CreateAttendanceRecordData {
   notes?: string | null;
 }
 
+// Service interfaces
+export interface SubjectService {
+  getSubjects(year?: number, month?: number): Promise<AppSubject[]>;
+}
+
+export interface AttendanceService {
+  addAttendanceRecord(recordData: CreateAttendanceRecordData): Promise<boolean>;
+  updateAttendanceRecord(
+    subjectId: string,
+    date: string,
+    status: 'Present' | 'Absent' | 'Holiday' | 'OD',
+    notes?: string | null
+  ): Promise<boolean>;
+  deleteAttendanceRecord(subjectId: string, date: string): Promise<boolean>;
+  getAttendanceRecords(subjectId: string, year?: number, month?: number): Promise<AppAttendanceRecord[]>;
+}
+
+export interface UserService {
+  getCurrentUser(): Promise<AppUserProfile | null>;
+  updateUserProfile(updates: Partial<AppUserProfile>): Promise<boolean>;
+}
+
+export interface AuthService {
+  signUp(email: string, password: string, name: string): Promise<{ data: any; error: any }>;
+  signIn(email: string, password: string): Promise<{ data: any; error: any }>;
+  signOut(): Promise<{ error: any }>;
+  resetPassword(email: string): Promise<{ error: any }>;
+  getSession(): Promise<{ data: any; error: any }>;
+  onAuthStateChange(callback: (event: string, session: any) => void): { data: { subscription: { unsubscribe: () => void } } };
+}

@@ -2,22 +2,21 @@ import { useSubjects } from '@/contexts/SubjectsContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
-    Animated,
-    Modal,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
 
 export default function HistoryScreen() {
-  const { subjects, loading, error } = useSubjects();
+  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth } = useSubjects();
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<{
     subjectId: string;
@@ -48,6 +47,40 @@ export default function HistoryScreen() {
     }, 2000);
   };
 
+  // Get month name
+  const getMonthName = (year: number, month: number) => {
+    const date = new Date(year, month, 1);
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  // Navigate months
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    let newYear = selectedYear;
+    let newMonth = selectedMonth;
+    
+    if (direction === 'prev') {
+      newMonth--;
+      if (newMonth < 0) {
+        newMonth = 11;
+        newYear--;
+      }
+    } else {
+      newMonth++;
+      if (newMonth > 11) {
+        newMonth = 0;
+        newYear++;
+      }
+    }
+    
+    setSelectedMonth(newYear, newMonth);
+  };
+
+  // Check if we're viewing current month
+  const isCurrentMonth = () => {
+    const now = new Date();
+    return selectedYear === now.getFullYear() && selectedMonth === now.getMonth();
+  };
+
   // Get filtered subjects based on selection
   const getFilteredSubjects = () => {
     if (selectedSubject === 'all') {
@@ -59,8 +92,6 @@ export default function HistoryScreen() {
   // Get attendance records for selected month
   const getMonthlyRecords = () => {
     const filteredSubjects = getFilteredSubjects();
-    const year = selectedMonth.getFullYear();
-    const month = selectedMonth.getMonth();
 
     const records: Array<{
       subjectId: string;
@@ -71,15 +102,12 @@ export default function HistoryScreen() {
 
     filteredSubjects.forEach(subject => {
       subject.history.forEach(record => {
-        const recordDate = new Date(record.date);
-        if (recordDate.getFullYear() === year && recordDate.getMonth() === month) {
-          records.push({
-            subjectId: subject.id,
-            subjectName: subject.name,
-            date: record.date,
-            status: record.status,
-          });
-        }
+        records.push({
+          subjectId: subject.id,
+          subjectName: subject.name,
+          date: record.date,
+          status: record.status,
+        });
       });
     });
 
@@ -95,22 +123,6 @@ export default function HistoryScreen() {
     const percentage = totalRecords > 0 ? Math.round((presentCount / totalRecords) * 100) : 0;
 
     return { totalRecords, presentCount, absentCount, percentage };
-  };
-
-  // Get month name
-  const getMonthName = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  };
-
-  // Navigate months
-  const navigateMonth = (direction: 'prev' | 'next') => {
-    const newDate = new Date(selectedMonth);
-    if (direction === 'prev') {
-      newDate.setMonth(newDate.getMonth() - 1);
-    } else {
-      newDate.setMonth(newDate.getMonth() + 1);
-    }
-    setSelectedMonth(newDate);
   };
 
   // Get status color
@@ -185,7 +197,7 @@ export default function HistoryScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Attendance History</Text>
-          <Text style={styles.subtitle}>Track your attendance over time</Text>
+          <Text style={styles.subtitle}>View and manage past attendance</Text>
         </View>
 
         {/* Error State */}
@@ -206,7 +218,14 @@ export default function HistoryScreen() {
             <Ionicons name="chevron-back" size={24} color="#ffffff" />
           </TouchableOpacity>
           
-          <Text style={styles.monthText}>{getMonthName(selectedMonth)}</Text>
+          <View style={styles.monthInfo}>
+            <Text style={styles.monthText}>{getMonthName(selectedYear, selectedMonth)}</Text>
+            {isCurrentMonth() && (
+              <View style={styles.currentMonthBadge}>
+                <Text style={styles.currentMonthText}>Current</Text>
+              </View>
+            )}
+          </View>
           
           <TouchableOpacity
             style={styles.navButton}
@@ -296,7 +315,7 @@ export default function HistoryScreen() {
               <Ionicons name="calendar-outline" size={48} color="#4b5563" />
               <Text style={styles.emptyTitle}>No Records Found</Text>
               <Text style={styles.emptySubtitle}>
-                No attendance records for {getMonthName(selectedMonth)}
+                No attendance records for {getMonthName(selectedYear, selectedMonth)}
               </Text>
             </View>
           ) : (
@@ -490,10 +509,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  monthInfo: {
+    alignItems: 'center',
+  },
   monthText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#ffffff',
+    marginBottom: 4,
+  },
+  currentMonthBadge: {
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  currentMonthText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
   },
   statsCard: {
     backgroundColor: '#1a1a1a',

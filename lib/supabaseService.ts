@@ -2,9 +2,11 @@ import {
   AppAttendanceRecord,
   AppSubject,
   AppUserProfile,
+  AttendanceService,
+  AuthService,
   CreateAttendanceRecordData,
-  CreateSubjectData,
-  UpdateSubjectData
+  SubjectService,
+  UserService
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
@@ -14,8 +16,31 @@ const dayNumberToName = (dayNumber: number): string => {
   return days[dayNumber - 1] || 'Unknown';
 };
 
-const slotNumberToName = (slotNumber: number): string => {
-  return `Slot ${slotNumber}`;
+const slotNumberToTimeSlot = (slotNumber: number): string => {
+  const slots: Record<number, string> = {
+    1: '7:45 AM - 8:45 AM',
+    2: '8:45 AM - 9:45 AM',
+    3: '9:45 AM - 1:30 PM',
+    4: '1:30 PM - 2:15 PM',
+    5: '2:15 PM - 3:15 PM',
+  };
+  return slots[slotNumber] || 'Unknown';
+};
+
+// Get month start and end dates for any month
+const getMonthRange = (year: number, month: number) => {
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0);
+  return {
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0],
+  };
+};
+
+// Get current month start and end dates
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  return getMonthRange(now.getFullYear(), now.getMonth());
 };
 
 // User operations
@@ -82,8 +107,8 @@ export const userService = {
 
 // Subject operations
 export const subjectService = {
-  // Get all subjects for current user with timetable slots and attendance records
-  async getSubjects(): Promise<AppSubject[]> {
+  // Get all subjects with timetable slots and attendance records for a specific month
+  async getSubjects(year?: number, month?: number): Promise<AppSubject[]> {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return [];
@@ -97,25 +122,30 @@ export const subjectService = {
 
       if (userError || !userData) return [];
 
-      // Get subjects first
+      // Get all subjects (fixed timetable)
       const { data: subjects, error: subjectsError } = await supabase
         .from('subjects')
         .select('*')
-        .eq('user_id', userData.id)
-        .order('created_at', { ascending: true });
+        .order('subject_name', { ascending: true });
 
       if (subjectsError) {
         console.error('Error fetching subjects:', subjectsError);
         return [];
       }
 
-      // If no subjects, return empty array immediately
       if (!subjects || subjects.length === 0) {
         return [];
       }
 
-      // Execute timetable slots and attendance records queries in parallel
       const subjectIds = subjects.map(s => s.id);
+      
+      // Use provided year/month or default to current month
+      const now = new Date();
+      const targetYear = year ?? now.getFullYear();
+      const targetMonth = month ?? now.getMonth();
+      const monthRange = getMonthRange(targetYear, targetMonth);
+
+      // Execute timetable slots and attendance records queries in parallel
       const [timetableSlotsResult, attendanceRecordsResult] = await Promise.all([
         supabase
           .from('timetable_slots')
@@ -124,7 +154,10 @@ export const subjectService = {
         supabase
           .from('attendance_records')
           .select('subject_id, date, status, notes')
+          .eq('user_id', userData.id)
           .in('subject_id', subjectIds)
+          .gte('date', monthRange.start)
+          .lte('date', monthRange.end)
           .order('date', { ascending: false })
       ]);
 
@@ -133,10 +166,11 @@ export const subjectService = {
 
       // Transform data to AppSubject format
       const transformedSubjects = subjects.map(subject => {
-        // Get timetable slots for this subject
         const subjectTimetableSlots = timetableSlots.filter(slot => slot.subject_id === subject.id);
         const days = subjectTimetableSlots.map(slot => dayNumberToName(slot.day_of_week));
-        const timeSlot = subjectTimetableSlots.length > 0 ? slotNumberToName(subjectTimetableSlots[0].slot_number) : '';
+        const timeSlot = subjectTimetableSlots.length > 0 
+          ? slotNumberToTimeSlot(subjectTimetableSlots[0].slot_number) 
+          : '';
 
         const subjectAttendanceRecords = attendanceRecords
           .filter(record => record.subject_id === subject.id)
@@ -150,8 +184,8 @@ export const subjectService = {
           id: subject.id,
           name: subject.subject_name,
           staffName: subject.staff_name || '',
-          minAttendance: subject.required_attendance_percentage,
-          days: [...new Set(days)] as string[], // Remove duplicates and ensure string array
+          minAttendance: 75, // Default minimum attendance
+          days: [...new Set(days)] as string[],
           timeSlot,
           classType: subject.subject_type,
           history: subjectAttendanceRecords,
@@ -164,131 +198,6 @@ export const subjectService = {
       return [];
     }
   },
-
-  // Create a new subject
-  async createSubject(subjectData: CreateSubjectData): Promise<string | null> {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) return null;
-
-      // Get user ID
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .single();
-
-      if (userError || !userData) return null;
-
-      // Create subject
-      const { data: subject, error: subjectError } = await supabase
-        .from('subjects')
-        .insert({
-          user_id: userData.id,
-          subject_name: subjectData.subject_name,
-          staff_name: subjectData.staff_name,
-          subject_type: subjectData.subject_type,
-          required_attendance_percentage: subjectData.required_attendance_percentage,
-        })
-        .select('id')
-        .single();
-
-      if (subjectError) {
-        console.error('Error creating subject:', subjectError);
-        return null;
-      }
-
-      // Create timetable slots
-      if (subjectData.timetable_slots.length > 0) {
-        const slotsData = subjectData.timetable_slots.map(slot => ({
-          user_id: userData.id,
-          subject_id: subject.id,
-          day_of_week: slot.day_of_week,
-          slot_number: slot.slot_number,
-        }));
-
-        const { error: slotsError } = await supabase
-          .from('timetable_slots')
-          .insert(slotsData);
-
-        if (slotsError) {
-          console.error('Error creating timetable slots:', slotsError);
-          // Don't return null here, subject was created successfully
-        }
-      }
-
-      return subject.id;
-    } catch (error) {
-      console.error('Error in createSubject:', error);
-      return null;
-    }
-  },
-
-  // Update a subject
-  async updateSubject(subjectId: string, updates: UpdateSubjectData): Promise<boolean> {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) return false;
-
-      // Get user ID
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .single();
-
-      if (userError || !userData) return false;
-
-      const { error } = await supabase
-        .from('subjects')
-        .update(updates)
-        .eq('id', subjectId)
-        .eq('user_id', userData.id);
-
-      if (error) {
-        console.error('Error updating subject:', error);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error in updateSubject:', error);
-      return false;
-    }
-  },
-
-  // Delete a subject
-  async deleteSubject(subjectId: string): Promise<boolean> {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) return false;
-
-      // Get user ID
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .single();
-
-      if (userError || !userData) return false;
-
-      const { error } = await supabase
-        .from('subjects')
-        .delete()
-        .eq('id', subjectId)
-        .eq('user_id', userData.id);
-
-      if (error) {
-        console.error('Error deleting subject:', error);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error in deleteSubject:', error);
-      return false;
-    }
-  },
 };
 
 // Attendance operations
@@ -299,7 +208,6 @@ export const attendanceService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return false;
 
-      // Get user ID
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
@@ -341,7 +249,6 @@ export const attendanceService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return false;
 
-      // Get user ID
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
@@ -378,7 +285,6 @@ export const attendanceService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return false;
 
-      // Get user ID
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
@@ -406,13 +312,12 @@ export const attendanceService = {
     }
   },
 
-  // Get attendance records for a specific subject
-  async getAttendanceRecords(subjectId: string): Promise<AppAttendanceRecord[]> {
+  // Get attendance records for a specific subject and month
+  async getAttendanceRecords(subjectId: string, year?: number, month?: number): Promise<AppAttendanceRecord[]> {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return [];
 
-      // Get user ID
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
@@ -421,11 +326,19 @@ export const attendanceService = {
 
       if (userError || !userData) return [];
 
+      // Use provided year/month or default to current month
+      const now = new Date();
+      const targetYear = year ?? now.getFullYear();
+      const targetMonth = month ?? now.getMonth();
+      const monthRange = getMonthRange(targetYear, targetMonth);
+
       const { data, error } = await supabase
         .from('attendance_records')
         .select('date, status, notes')
         .eq('user_id', userData.id)
         .eq('subject_id', subjectId)
+        .gte('date', monthRange.start)
+        .lte('date', monthRange.end)
         .order('date', { ascending: false });
 
       if (error) {
@@ -447,7 +360,6 @@ export const attendanceService = {
 
 // Auth operations
 export const authService = {
-  // Sign up with email and password
   async signUp(email: string, password: string, name: string) {
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -460,7 +372,6 @@ export const authService = {
 
       if (error) throw error;
 
-      // Create user profile immediately after successful signup
       if (data.user) {
         try {
           await supabase
@@ -469,11 +380,10 @@ export const authService = {
               auth_id: data.user.id,
               name: name,
               email: email,
-              attendance_target: 75, // Default value
+              attendance_target: 75,
             });
         } catch (profileError) {
           console.error('Error creating user profile:', profileError);
-          // Don't fail the signup if profile creation fails
         }
       }
 
@@ -484,7 +394,6 @@ export const authService = {
     }
   },
 
-  // Sign in with email and password
   async signIn(email: string, password: string) {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -500,7 +409,6 @@ export const authService = {
     }
   },
 
-  // Sign out
   async signOut() {
     try {
       const { error } = await supabase.auth.signOut();
@@ -512,7 +420,6 @@ export const authService = {
     }
   },
 
-  // Reset password
   async resetPassword(email: string) {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -527,7 +434,6 @@ export const authService = {
     }
   },
 
-  // Get current session
   async getSession() {
     try {
       const { data, error } = await supabase.auth.getSession();
@@ -539,7 +445,6 @@ export const authService = {
     }
   },
 
-  // Listen to auth state changes
   onAuthStateChange(callback: (event: string, session: any) => void) {
     return supabase.auth.onAuthStateChange(callback);
   },

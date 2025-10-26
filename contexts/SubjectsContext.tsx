@@ -1,14 +1,14 @@
 import { attendanceService, authService, subjectService } from '@/lib/supabaseService';
-import { AppAttendanceRecord, AppSubject, CreateSubjectData, UpdateSubjectData } from '@/types/supabase';
+import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 interface SubjectsContextType {
   subjects: AppSubject[];
   loading: boolean;
   error: string | null;
-  addSubject: (subjectData: CreateSubjectData) => Promise<boolean>;
-  updateSubject: (id: string, updates: UpdateSubjectData) => Promise<boolean>;
-  deleteSubject: (id: string) => Promise<boolean>;
+  selectedYear: number;
+  selectedMonth: number;
+  setSelectedMonth: (year: number, month: number) => void;
   addAttendance: (subjectId: string, record: AppAttendanceRecord) => Promise<boolean>;
   updateAttendance: (subjectId: string, date: string, status: AppAttendanceRecord['status'], notes?: string | null) => Promise<boolean>;
   deleteAttendance: (subjectId: string, date: string) => Promise<boolean>;
@@ -22,12 +22,17 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [subjects, setSubjects] = useState<AppSubject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonthState] = useState<number>(new Date().getMonth());
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
 
   // Load subjects from Supabase with simple caching
-  const loadSubjects = async (forceRefresh = false) => {
+  const loadSubjects = async (forceRefresh = false, year?: number, month?: number) => {
     const now = Date.now();
     const CACHE_DURATION = 30000; // 30 seconds cache
+    
+    const targetYear = year ?? selectedYear;
+    const targetMonth = month ?? selectedMonth;
     
     // Use cache if data is fresh and not forcing refresh
     if (!forceRefresh && subjects.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
@@ -37,7 +42,7 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       setLoading(true);
       setError(null);
-      const data = await subjectService.getSubjects();
+      const data = await subjectService.getSubjects(targetYear, targetMonth);
       setSubjects(data);
       setLastFetchTime(now);
     } catch (err) {
@@ -48,11 +53,17 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  // Update selected month and reload data
+  const setSelectedMonth = (year: number, month: number) => {
+    setSelectedYear(year);
+    setSelectedMonthState(month);
+    loadSubjects(true, year, month);
+  };
+
   // Listen to auth state changes
   useEffect(() => {
     const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        // Load subjects in background without blocking UI
         loadSubjects();
       } else if (event === 'SIGNED_OUT') {
         setSubjects([]);
@@ -60,7 +71,6 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     });
 
-    // Load subjects on mount if user is already signed in
     const checkAuthAndLoad = async () => {
       const { data } = await authService.getSession();
       if (data?.session) {
@@ -75,74 +85,17 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   }, []);
 
-  const addSubject = async (subjectData: CreateSubjectData): Promise<boolean> => {
-    try {
-      setError(null);
-      const subjectId = await subjectService.createSubject(subjectData);
-      
-      if (subjectId) {
-        // Create a temporary subject object for immediate UI update
-        const tempSubject = {
-          id: subjectId,
-          name: subjectData.subject_name,
-          staffName: subjectData.staff_name || '',
-          minAttendance: subjectData.required_attendance_percentage,
-          days: [], // Will be populated when we refresh
-          timeSlot: '',
-          classType: subjectData.subject_type,
-          history: [],
-        };
-        
-        // Add to local state immediately for better UX
-        setSubjects(prev => [...prev, tempSubject]);
-        
-        // Refresh subjects in background to get complete data
-        loadSubjects();
-        return true;
+  // Reload when selected month changes
+  useEffect(() => {
+    const checkAuthAndLoad = async () => {
+      const { data } = await authService.getSession();
+      if (data?.session) {
+        loadSubjects(true, selectedYear, selectedMonth);
       }
-      return false;
-    } catch (err) {
-      console.error('Error adding subject:', err);
-      setError('Failed to add subject');
-      return false;
-    }
-  };
-
-  const updateSubject = async (id: string, updates: UpdateSubjectData): Promise<boolean> => {
-    try {
-      setError(null);
-      const success = await subjectService.updateSubject(id, updates);
-      
-      if (success) {
-        // Refresh subjects to get the updated one
-        await loadSubjects();
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('Error updating subject:', err);
-      setError('Failed to update subject');
-      return false;
-    }
-  };
-
-  const deleteSubject = async (id: string): Promise<boolean> => {
-    try {
-      setError(null);
-      const success = await subjectService.deleteSubject(id);
-      
-      if (success) {
-        // Remove from local state immediately for better UX
-        setSubjects(prev => prev.filter(subject => subject.id !== id));
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('Error deleting subject:', err);
-      setError('Failed to delete subject');
-      return false;
-    }
-  };
+    };
+    
+    checkAuthAndLoad();
+  }, [selectedYear, selectedMonth]);
 
   const addAttendance = async (subjectId: string, record: AppAttendanceRecord): Promise<boolean> => {
     try {
@@ -155,14 +108,18 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       });
       
       if (success) {
-        // Update local state immediately for better UX
-        setSubjects(prev => 
-          prev.map(subject => 
-            subject.id === subjectId 
-              ? { ...subject, history: [record, ...subject.history] }
-              : subject
-          )
-        );
+        // Check if the record belongs to the currently selected month
+        const recordDate = new Date(record.date);
+        if (recordDate.getFullYear() === selectedYear && recordDate.getMonth() === selectedMonth) {
+          // Update local state immediately for better UX
+          setSubjects(prev => 
+            prev.map(subject => 
+              subject.id === subjectId 
+                ? { ...subject, history: [record, ...subject.history] }
+                : subject
+            )
+          );
+        }
         return true;
       }
       return false;
@@ -184,7 +141,6 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       const success = await attendanceService.updateAttendanceRecord(subjectId, date, status, notes);
       
       if (success) {
-        // Update local state immediately for better UX
         setSubjects(prev => 
           prev.map(subject => 
             subject.id === subjectId 
@@ -215,7 +171,6 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       const success = await attendanceService.deleteAttendanceRecord(subjectId, date);
       
       if (success) {
-        // Update local state immediately for better UX
         setSubjects(prev => 
           prev.map(subject => 
             subject.id === subjectId 
@@ -241,7 +196,7 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const refreshSubjects = async () => {
-    await loadSubjects(true); // Force refresh
+    await loadSubjects(true, selectedYear, selectedMonth);
   };
 
   return (
@@ -250,9 +205,9 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
         subjects,
         loading,
         error,
-        addSubject,
-        updateSubject,
-        deleteSubject,
+        selectedYear,
+        selectedMonth,
+        setSelectedMonth,
         addAttendance,
         updateAttendance,
         deleteAttendance,
