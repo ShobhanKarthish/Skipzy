@@ -55,26 +55,37 @@ export default function SubjectsScreen() {
 
   const getStats = (history: any[]) => {
     const attended = history.filter(h => h.status === 'Present' || h.status === 'OD').length;
-    const total = history.filter(h => h.status === 'Present' || h.status === 'Absent').length;
+    // Ensure 'total' calculation is based on relevant statuses (Present, Absent, OD)
+    const total = history.filter(
+        h => h.status === 'Present' || h.status === 'Absent' || h.status === 'OD'
+    ).length;
     const absent = history.filter(h => h.status === 'Absent').length;
     return { attended, total, absent };
   };
 
+
   const calculateSafeToSkip = (subject: AppSubject) => {
     const { attended, total } = getStats(subject.history);
-    if (total === 0) return 0;
-    
+    if (total === 0) return 0; // Or Infinity if preferred when no classes held
+
+    // Calculate required classes, ensuring minAttendance is treated as percentage
     const minClassesRequired = Math.ceil((subject.minAttendance / 100) * total);
     const maxSkipsAllowed = total - minClassesRequired;
-    const skipsUsed = total - attended;
+    const skipsUsed = total - attended; // Skips are total relevant classes minus attended
     return Math.max(0, maxSkipsAllowed - skipsUsed);
   };
 
+
   const getStatusColor = (percentage: number, minPercentage: number, safeToSkip: number) => {
     if (percentage >= minPercentage) return { text: '#10b981', ring: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
-    if (safeToSkip <= 0) return { text: '#ef4444', ring: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' };
-    return { text: '#f59e0b', ring: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
+    // Consider safeToSkip only relevant if percentage is below target
+    if (safeToSkip <= 0 && percentage < minPercentage) return { text: '#ef4444', ring: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' };
+    // If below target but skips are available, show warning color
+    if (percentage < minPercentage) return { text: '#f59e0b', ring: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
+     // Default to success color if exactly at or above target (covered by first condition but safe fallback)
+    return { text: '#10b981', ring: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
   };
+
 
   const handleQuickMark = (subject: AppSubject) => {
     setSelectedSubject(subject);
@@ -83,6 +94,7 @@ export default function SubjectsScreen() {
 
   const renderSubjectCard = (subject: AppSubject) => {
     const { attended, total } = getStats(subject.history);
+    // Ensure percentage calculation uses the correct 'total'
     const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
     const safeToSkip = calculateSafeToSkip(subject);
     const colors = getStatusColor(percentage, subject.minAttendance, safeToSkip);
@@ -109,14 +121,14 @@ export default function SubjectsScreen() {
                 )}
               </View>
             </View>
-            
+
             <View style={styles.progressRing}>
               <Svg width={64} height={64}>
                 <Circle
                   cx="32"
                   cy="32"
                   r={radius}
-                  stroke="#2a2a2a"
+                  stroke="#2a2a2a" // Background ring color
                   strokeWidth="4"
                   fill="transparent"
                 />
@@ -157,6 +169,8 @@ export default function SubjectsScreen() {
             </View>
           </View>
 
+          {/* --- REMOVED SCHEDULE SECTION --- */}
+          {/*
           <View style={styles.scheduleSection}>
             <View style={styles.scheduleHeader}>
               <Ionicons name="calendar-outline" size={16} color="#6b7280" />
@@ -173,6 +187,9 @@ export default function SubjectsScreen() {
               <Text style={styles.scheduleText}>No schedule available</Text>
             )}
           </View>
+           */}
+          {/* --- END REMOVED SCHEDULE SECTION --- */}
+
         </View>
 
         {/* Quick Mark Button - Full Width */}
@@ -204,7 +221,7 @@ export default function SubjectsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-      
+
       {/* Toast */}
       {toastMessage && (
         <Animated.View style={[
@@ -225,7 +242,8 @@ export default function SubjectsScreen() {
         <View>
           <Text style={styles.title}>My Subjects</Text>
           <Text style={styles.subtitle}>
-            Third Year BDS - {new Date(selectedYear, selectedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+             {/* Dynamic year/month */}
+            {new Date(selectedYear, selectedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </Text>
         </View>
       </View>
@@ -238,7 +256,7 @@ export default function SubjectsScreen() {
         </View>
       )}
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -250,7 +268,7 @@ export default function SubjectsScreen() {
             </View>
             <Text style={styles.emptyTitle}>No Subjects Found</Text>
             <Text style={styles.emptySubtitle}>
-              The timetable will appear once the database is set up
+              Subjects will appear here once added.
             </Text>
           </View>
         ) : (
@@ -270,6 +288,9 @@ export default function SubjectsScreen() {
         onSuccess={() => {
           showToast('Attendance marked successfully!', 'success');
         }}
+         onError={(message) => { // Handle potential errors from bottom sheet
+          showToast(message || 'Failed to mark attendance', 'error');
+        }}
       />
     </View>
   );
@@ -282,7 +303,7 @@ const styles = StyleSheet.create({
   },
   toastContainer: {
     position: 'absolute',
-    top: 0,
+    top: 60, // Position below status bar
     left: 20,
     right: 20,
     padding: 16,
@@ -332,6 +353,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingTop: 0, // Remove top padding as header handles it
   },
   subjectCard: {
     backgroundColor: '#1a1a1a',
@@ -339,7 +361,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#262626',
-    overflow: 'hidden',
+    overflow: 'hidden', // Keep overflow hidden for button radius
   },
   cardContent: {
     padding: 16,
@@ -348,10 +370,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 16, // Increased margin
   },
   cardTitleSection: {
     flex: 1,
+    marginRight: 12, // Add margin to prevent text overlap with ring
   },
   subjectName: {
     fontSize: 18,
@@ -363,6 +386,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexWrap: 'wrap', // Allow meta info to wrap if needed
   },
   metaText: {
     fontSize: 13,
@@ -394,7 +418,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 12,
     borderRadius: 12,
-    marginBottom: 12,
+    // marginBottom: 12, // Remove bottom margin as schedule is gone
   },
   statItem: {
     flex: 1,
@@ -408,50 +432,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6b7280',
     marginBottom: 4,
+    textTransform: 'uppercase', // Uppercase labels
   },
   statValue: {
     fontSize: 14,
     fontWeight: '700',
     color: '#ffffff',
   },
-  scheduleSection: {
-    gap: 8,
-  },
-  scheduleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  scheduleTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9ca3af',
-  },
-  scheduleEntry: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    borderRadius: 6,
-    borderLeftWidth: 2,
-    borderLeftColor: '#8b5cf6',
-  },
-  scheduleDay: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  scheduleTime: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
-  scheduleText: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
+  // --- REMOVED scheduleSection, scheduleHeader, scheduleTitle, scheduleEntry, scheduleDay, scheduleTime, scheduleText styles ---
   quickMarkBtnFull: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -459,8 +447,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#8b5cf6',
     padding: 14,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
+    // Removed border radius here as it's handled by overflow:hidden on parent
   },
   quickMarkText: {
     color: '#ffffff',
@@ -468,7 +455,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bottomPadding: {
-    height: 100,
+    height: 100, // Keep padding for scroll area below tabs
   },
   loadingContainer: {
     flex: 1,
@@ -487,7 +474,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     padding: 16,
-    margin: 16,
+    marginHorizontal: 16, // Keep horizontal margin
+    marginBottom: 16, // Add bottom margin if needed
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.2)',
@@ -504,6 +492,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    marginTop: 40, // Add margin if header is present
   },
   emptyIcon: {
     marginBottom: 24,
