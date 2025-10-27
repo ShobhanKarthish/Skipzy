@@ -1,18 +1,25 @@
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
-import { AppSubject } from '@/types/supabase';
+import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert, // Keep Alert
   Animated,
-  Modal,
+  Modal, // Keep Modal for Parallel Class selection
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
+
+type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
+const ALL_ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 'Holiday'];
+
+// *** REMOVE MarkAllModal Component and its styles ***
 
 export default function HistoryScreen() {
   const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth, addAttendance } = useSubjects();
@@ -23,14 +30,16 @@ export default function HistoryScreen() {
   const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
   const [selectedParallelClasses, setSelectedParallelClasses] = useState<any[]>([]);
 
-  // Toast state
+  // *** Remove markAllModalVisible state ***
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(-100)).current;
 
-  const showToast = (message: string) => {
+  // --- Functions (getMonthName, navigateMonth, isCurrentMonth, getCalendarDays, getSubjectsForDate, handleParallelClassSelection, handleDatePress, getMonthlyStats, showToast) remain the same ---
+     const showToast = (message: string) => {
     setToastMessage(message);
     Animated.timing(toastAnim, {
-      toValue: 50,
+      toValue: 50, // Adjusted position
       duration: 300,
       useNativeDriver: true,
     }).start();
@@ -43,8 +52,9 @@ export default function HistoryScreen() {
       }).start(() => {
         setToastMessage(null);
       });
-    }, 2000);
+    }, 2000); // Duration toast is visible
   };
+
 
   // Get month name
   const getMonthName = (year: number, month: number) => {
@@ -56,7 +66,7 @@ export default function HistoryScreen() {
   const navigateMonth = (direction: 'prev' | 'next') => {
     let newYear = selectedYear;
     let newMonth = selectedMonth;
-    
+
     if (direction === 'prev') {
       newMonth--;
       if (newMonth < 0) {
@@ -70,7 +80,7 @@ export default function HistoryScreen() {
         newYear++;
       }
     }
-    
+
     setSelectedMonth(newYear, newMonth);
   };
 
@@ -97,15 +107,17 @@ export default function HistoryScreen() {
     }> = [];
 
     // Add empty slots for days before month starts
-    for (let i = 0; i < startingDayOfWeek; i++) {
-      days.push({
-        date: null,
-        dateNumber: null,
-        isCurrentMonth: false,
-        isToday: false,
-        hasAttendance: false,
-        attendanceCount: 0,
-      });
+    // Adjust startingDayOfWeek based on Mon-Sun week start preference if needed
+    let displayStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek -1; // Make Monday index 0
+    for (let i = 0; i < displayStartingDay; i++) {
+        days.push({
+            date: null,
+            dateNumber: null,
+            isCurrentMonth: false,
+            isToday: false,
+            hasAttendance: false,
+            attendanceCount: 0,
+        });
     }
 
     // Add all days in the month
@@ -113,7 +125,7 @@ export default function HistoryScreen() {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(selectedYear, selectedMonth, day);
       const dateStr = date.toISOString().split('T')[0];
-      
+
       // Count attendance records for this date
       let attendanceCount = 0;
       subjects.forEach(subject => {
@@ -126,7 +138,7 @@ export default function HistoryScreen() {
         date,
         dateNumber: day,
         isCurrentMonth: true,
-        isToday: 
+        isToday:
           date.getDate() === today.getDate() &&
           date.getMonth() === today.getMonth() &&
           date.getFullYear() === today.getFullYear(),
@@ -138,19 +150,20 @@ export default function HistoryScreen() {
     return days;
   };
 
+
   // Get subjects for a specific date (based on day of week) with their schedule details
   const getSubjectsForDate = (date: Date): Array<AppSubject & { scheduleEntry?: any; isParallel?: boolean; parallelOptions?: any[] }> => {
-    const dayOfWeek = date.getDay();
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ...
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
 
     // Group subjects by slot number to detect parallel classes
     const slotMap = new Map<number, Array<{ subject: AppSubject; entry: any }>>();
-    
+
     subjects.forEach(subject => {
       if (subject.schedule && subject.schedule.length > 0) {
         const daySchedules = subject.schedule.filter(entry => entry.day === dayName);
-        
+
         daySchedules.forEach(entry => {
           if (!slotMap.has(entry.slotNumber)) {
             slotMap.set(entry.slotNumber, []);
@@ -161,7 +174,7 @@ export default function HistoryScreen() {
     });
 
     const subjectsWithSchedule: Array<AppSubject & { scheduleEntry?: any; isParallel?: boolean; parallelOptions?: any[] }> = [];
-    
+
     // Process each slot
     slotMap.forEach((items, slotNumber) => {
       if (items.length > 1) {
@@ -185,7 +198,7 @@ export default function HistoryScreen() {
         });
       }
     });
-    
+
     // Sort by slot number
     return subjectsWithSchedule.sort((a, b) => {
       const slotA = a.scheduleEntry?.slotNumber || 0;
@@ -193,6 +206,7 @@ export default function HistoryScreen() {
       return slotA - slotB;
     });
   };
+
 
   const handleParallelClassSelection = (subject: AppSubject) => {
     setSelectedSubject(subject);
@@ -204,216 +218,304 @@ export default function HistoryScreen() {
   // Handle date selection
   const handleDatePress = (day: any) => {
     if (!day.date || !day.isCurrentMonth) return;
-    
+
     setSelectedDate(day.date);
-    
+
     // Get subjects for this day
     const daySubjects = getSubjectsForDate(day.date);
-    
+
     if (daySubjects.length === 0) {
       showToast('No classes scheduled for this day');
       return;
     }
-    
-    // If only one subject, select it automatically
-    if (daySubjects.length === 1) {
-      setSelectedSubject(daySubjects[0]);
-      setEditingRecord(false);
-      setQuickMarkVisible(true);
-    }
+
+    // Note: Removed automatic selection if only one subject to allow Mark All
   };
+
 
   // Calculate monthly statistics
   const getMonthlyStats = () => {
     let totalRecords = 0;
     let presentCount = 0;
     let absentCount = 0;
+    let odCount = 0; // Added OD count
 
     subjects.forEach(subject => {
-      totalRecords += subject.history.length;
-      presentCount += subject.history.filter(h => h.status === 'Present' || h.status === 'OD').length;
-      absentCount += subject.history.filter(h => h.status === 'Absent').length;
+        subject.history.forEach(h => {
+            // Only count Present, Absent, OD for percentage calculation
+            if (h.status === 'Present' || h.status === 'Absent' || h.status === 'OD') {
+                totalRecords++;
+            }
+            if (h.status === 'Present' || h.status === 'OD') {
+                presentCount++;
+            }
+            if (h.status === 'Absent') {
+                absentCount++;
+            }
+            // odCount is included in presentCount for percentage, but tracked separately if needed elsewhere
+        });
     });
 
     const percentage = totalRecords > 0 ? Math.round((presentCount / totalRecords) * 100) : 0;
-    return { totalRecords, presentCount, absentCount, percentage };
+    // Return totalRecords based on Present/Absent/OD for percentage denominator
+    return { totalRecords: totalRecords, presentCount, absentCount, percentage };
   };
+
+  // *** REVISED: Confirmation and Mark All Logic using Alert.alert ***
+  const confirmAndMarkAll = (status: AttendanceStatus) => {
+    if (!selectedDate || isMarkingAll) return;
+
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    const subjectsToMark = selectedDaySubjects.filter(subject =>
+      !subject.history.some(h => h.date === dateStr) && !subject.isParallel
+    );
+     const count = subjectsToMark.length;
+
+    if (count === 0) {
+      // This case should ideally be handled by disabling the button, but added as safety
+      showToast('All eligible classes already marked.');
+      return;
+    }
+
+    // Final Confirmation Alert
+    Alert.alert(
+      "Confirm Mark All",
+      `Mark all ${count} unmarked classes as "${status}" for this day?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          style: "default", // Or "destructive" if marking as Absent
+          onPress: async () => {
+              setIsMarkingAll(true);
+              let successCount = 0;
+              let errorCount = 0;
+
+              try {
+                  await Promise.all(
+                    subjectsToMark.map(async (subject) => {
+                      const record: AppAttendanceRecord = {
+                        date: dateStr,
+                        status: status,
+                        notes: null,
+                      };
+                       // Add final check before adding
+                       const subjectData = subjects.find(s => s.id === subject.id); // Get latest subject data
+                       const alreadyExists = subjectData?.history.some(h => h.date === dateStr);
+                       if (!alreadyExists) {
+                           const success = await addAttendance(subject.id, record);
+                           if (success) successCount++;
+                           else errorCount++;
+                       } else {
+                            console.warn(`Skipping already marked (race condition?): ${subject.name}`);
+                       }
+                    })
+                  );
+              } catch (err) {
+                   console.error("Error during bulk mark:", err);
+                   errorCount = count - successCount; // Assume remaining failed
+              } finally {
+                  setIsMarkingAll(false);
+                  if (errorCount > 0) {
+                    showToast(`Marked ${successCount}. Failed for ${errorCount}.`);
+                  } else if (successCount > 0) {
+                    showToast(`Marked ${successCount} classes as ${status}.`);
+                  }
+                   // No else needed as the initial check covers the '0 to mark' case
+              }
+            }
+        }
+      ]
+    );
+  };
+
+   // New function to show status options via Alert
+   const showMarkAllStatusOptions = () => {
+       if (!selectedDate || isMarkingAll || unmarkedSubjectsCount === 0) return;
+
+       const options = ALL_ATTENDANCE_STATUSES.map(status => ({
+           text: status,
+           onPress: () => confirmAndMarkAll(status),
+           // Optionally add style: 'destructive' for 'Absent'
+           style: status === 'Absent' ? 'destructive' : 'default' as 'default' | 'cancel' | 'destructive' | undefined
+       }));
+
+       Alert.alert(
+           `Mark All Unmarked (${unmarkedSubjectsCount})`, // Title
+           "Choose a status to apply:", // Message
+           [
+               ...options,
+               {
+                   text: "Cancel",
+                   style: "cancel",
+               },
+           ],
+           { cancelable: true } // Allow dismissing by tapping outside
+       );
+   };
+
 
   const calendarDays = getCalendarDays();
   const monthlyStats = getMonthlyStats();
   const selectedDateStr = selectedDate?.toISOString().split('T')[0];
   const selectedDaySubjects = selectedDate ? getSubjectsForDate(selectedDate) : [];
+  const unmarkedSubjectsCount = selectedDaySubjects.filter(subject =>
+    !subject.history.some(h => h.date === selectedDateStr) && !subject.isParallel
+  ).length;
 
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-        <View style={styles.loadingContainer}>
-          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
-          <Text style={styles.loadingText}>Loading history...</Text>
+     return (
+        <View style={styles.container}>
+            <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+            <View style={styles.loadingContainer}>
+                <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
+                <Text style={styles.loadingText}>Loading history...</Text>
+            </View>
         </View>
-      </View>
     );
   }
 
+  // --- JSX Rendering ---
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
 
       {/* Toast */}
       {toastMessage && (
-        <Animated.View
-          style={[
-            styles.toastContainer,
-            { transform: [{ translateY: toastAnim }] },
-          ]}
-        >
-          <Ionicons name="checkmark-circle" size={22} color="#ffffff" />
+        <Animated.View style={[styles.toastContainer, { transform: [{ translateY: toastAnim }] }]}>
+          <Ionicons name="information-circle-outline" size={22} color="#ffffff" />
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       )}
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Attendance Calendar</Text>
-          <Text style={styles.subtitle}>Mark and view daily attendance</Text>
+            <Text style={styles.title}>Attendance Calendar</Text>
+            <Text style={styles.subtitle}>Mark and view daily attendance</Text>
         </View>
 
         {/* Error State */}
         {error && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={24} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
+            <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={24} color="#ef4444" />
+                <Text style={styles.errorText}>{error}</Text>
+            </View>
         )}
 
         {/* Month Navigation */}
-        <View style={styles.monthNavigation}>
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={() => navigateMonth('prev')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="chevron-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          
-          <View style={styles.monthInfo}>
-            <Text style={styles.monthText}>{getMonthName(selectedYear, selectedMonth)}</Text>
-            {isCurrentMonth() && (
-              <View style={styles.currentMonthBadge}>
-                <Text style={styles.currentMonthText}>Current</Text>
-              </View>
-            )}
-          </View>
-          
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={() => navigateMonth('next')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="chevron-forward" size={24} color="#ffffff" />
-          </TouchableOpacity>
+         <View style={styles.monthNavigation}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateMonth('prev')} activeOpacity={0.7}>
+                <Ionicons name="chevron-back" size={24} color="#ffffff" />
+            </TouchableOpacity>
+            <View style={styles.monthInfo}>
+                <Text style={styles.monthText}>{getMonthName(selectedYear, selectedMonth)}</Text>
+                {isCurrentMonth() && (<View style={styles.currentMonthBadge}><Text style={styles.currentMonthText}>Current</Text></View>)}
+            </View>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateMonth('next')} activeOpacity={0.7}>
+                <Ionicons name="chevron-forward" size={24} color="#ffffff" />
+            </TouchableOpacity>
         </View>
 
         {/* Monthly Statistics */}
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>Monthly Overview</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{monthlyStats.percentage}%</Text>
-              <Text style={styles.statLabel}>Attendance</Text>
+         <View style={styles.statsCard}>
+            <Text style={styles.statsTitle}>Monthly Overview</Text>
+            <View style={styles.statsGrid}>
+                <View style={styles.statItem}><Text style={styles.statNumber}>{monthlyStats.percentage}%</Text><Text style={styles.statLabel}>Attendance</Text></View>
+                <View style={styles.statItem}><Text style={styles.statNumber}>{monthlyStats.presentCount}</Text><Text style={styles.statLabel}>Present/OD</Text></View>
+                <View style={styles.statItem}><Text style={styles.statNumber}>{monthlyStats.absentCount}</Text><Text style={styles.statLabel}>Absent</Text></View>
+                <View style={styles.statItem}><Text style={styles.statNumber}>{monthlyStats.totalRecords}</Text><Text style={styles.statLabel}>Total Relevant</Text></View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{monthlyStats.presentCount}</Text>
-              <Text style={styles.statLabel}>Present</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{monthlyStats.absentCount}</Text>
-              <Text style={styles.statLabel}>Absent</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{monthlyStats.totalRecords}</Text>
-              <Text style={styles.statLabel}>Total</Text>
-            </View>
-          </View>
         </View>
 
         {/* Calendar */}
-        <View style={styles.calendarCard}>
-          <View style={styles.weekDaysHeader}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <Text key={day} style={styles.weekDayText}>{day}</Text>
-            ))}
-          </View>
-          
-          <View style={styles.calendarGrid}>
-            {calendarDays.map((day, index) => {
-              // Check if this day has any absences
-              let hasAbsence = false;
-              if (day.date) {
-                const dateStr = day.date.toISOString().split('T')[0];
-                hasAbsence = subjects.some(subject => 
-                  subject.history.some(h => h.date === dateStr && h.status === 'Absent')
-                );
-              }
-              
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.calendarDay,
-                    !day.isCurrentMonth && styles.calendarDayDisabled,
-                    day.isToday && styles.calendarDayToday,
-                    selectedDateStr === day.date?.toISOString().split('T')[0] && styles.calendarDaySelected,
-                  ]}
-                  onPress={() => handleDatePress(day)}
-                  activeOpacity={0.7}
-                  disabled={!day.isCurrentMonth}
-                >
-                  {day.dateNumber && (
-                    <>
-                      <Text style={[
-                        styles.dayNumber,
-                        !day.isCurrentMonth && styles.dayNumberDisabled,
-                        day.isToday && styles.dayNumberToday,
-                        selectedDateStr === day.date?.toISOString().split('T')[0] && styles.dayNumberSelected,
-                      ]}>
-                        {day.dateNumber}
-                      </Text>
-                      {day.hasAttendance && (
-                        <View style={[
-                          styles.attendanceDot,
-                          hasAbsence && styles.attendanceDotAbsent
-                        ]}>
-                          <Text style={styles.attendanceDotText}>{day.attendanceCount}</Text>
-                        </View>
-                      )}
-                    </>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+         <View style={styles.calendarCard}>
+             <View style={styles.weekDaysHeader}>
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (<Text key={day} style={styles.weekDayText}>{day}</Text>))}
+            </View>
+            <View style={styles.calendarGrid}>
+                {calendarDays.map((day, index) => {
+                      let hasAbsence = false;
+                    if (day.date) {
+                        const dateStr = day.date.toISOString().split('T')[0];
+                        hasAbsence = subjects.some(subject =>
+                            subject.history.some(h => h.date === dateStr && h.status === 'Absent')
+                        );
+                    }
+                     return (
+                        <TouchableOpacity
+                            key={index}
+                            style={[
+                                styles.calendarDay,
+                                !day.isCurrentMonth && styles.calendarDayDisabled,
+                                day.isToday && styles.calendarDayToday,
+                                selectedDateStr === day.date?.toISOString().split('T')[0] && styles.calendarDaySelected,
+                            ]}
+                            onPress={() => handleDatePress(day)}
+                            activeOpacity={0.7}
+                            disabled={!day.isCurrentMonth}
+                        >
+                            {day.dateNumber && (
+                                <>
+                                    <Text style={[
+                                        styles.dayNumber,
+                                        !day.isCurrentMonth && styles.dayNumberDisabled,
+                                        day.isToday && styles.dayNumberToday,
+                                        selectedDateStr === day.date?.toISOString().split('T')[0] && styles.dayNumberSelected,
+                                    ]}>
+                                        {day.dateNumber}
+                                    </Text>
+                                    {day.hasAttendance && (
+                                        <View style={[
+                                            styles.attendanceDot,
+                                            hasAbsence && styles.attendanceDotAbsent
+                                        ]}>
+                                            <Text style={styles.attendanceDotText}>{day.attendanceCount}</Text>
+                                        </View>
+                                    )}
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
         </View>
+
 
         {/* Selected Date Classes */}
         {selectedDate && (
           <View style={styles.selectedDateCard}>
             <View style={styles.selectedDateHeader}>
-              <Text style={styles.selectedDateTitle}>
-                {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </Text>
-              <Text style={styles.selectedDateSubtitle}>
-                {selectedDaySubjects.length} {selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled
-              </Text>
+              <View style={styles.selectedDateTitleContainer}>
+                <Text style={styles.selectedDateTitle}>
+                  {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </Text>
+                <Text style={styles.selectedDateSubtitle}>
+                  {selectedDaySubjects.length} {selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled
+                </Text>
+              </View>
+              {/* Mark All Button - Now triggers status options alert */}
+              {selectedDaySubjects.length > 0 && unmarkedSubjectsCount > 0 && (
+                <TouchableOpacity
+                  style={styles.markAllButton}
+                  onPress={showMarkAllStatusOptions} // Changed onPress handler
+                  disabled={isMarkingAll}
+                  activeOpacity={0.7}
+                >
+                  {isMarkingAll ? (
+                    <ActivityIndicator size="small" color="#8b5cf6" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-done-circle-outline" size={20} color="#8b5cf6" />
+                      <Text style={styles.markAllButtonText}>Mark All</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
-            {selectedDaySubjects.length === 0 ? (
+            {/* Class List Rendering Logic remains the same */}
+              {selectedDaySubjects.length === 0 ? (
               <View style={styles.noClassesBox}>
                 <Ionicons name="calendar-outline" size={32} color="#6b7280" />
                 <Text style={styles.noClassesText}>No classes scheduled</Text>
@@ -423,22 +525,17 @@ export default function HistoryScreen() {
                 {selectedDaySubjects.map((subject, index) => {
                   const dateRecord = subject.history.find(h => h.date === selectedDateStr);
                   const isMarked = !!dateRecord;
-                  
-                  // Create unique key combining subject ID and slot number (or index as fallback)
-                  const uniqueKey = subject.scheduleEntry 
-                    ? `${subject.id}_slot_${subject.scheduleEntry.slotNumber}` 
+
+                  const uniqueKey = subject.scheduleEntry
+                    ? `${subject.id}_slot_${subject.scheduleEntry.slotNumber}`
                     : `${subject.id}_${index}`;
 
                   return (
-                    <View
-                      key={uniqueKey}
-                      style={styles.classItem}
-                    >
+                    <View key={uniqueKey} style={styles.classItem}>
                       <TouchableOpacity
                         style={styles.classMainContent}
                         onPress={() => {
                           if (!isMarked) {
-                            // Check if this is a parallel class
                             if (subject.isParallel && subject.parallelOptions) {
                               setSelectedParallelClasses(subject.parallelOptions);
                               setParallelClassModalVisible(true);
@@ -447,39 +544,43 @@ export default function HistoryScreen() {
                               setEditingRecord(false);
                               setQuickMarkVisible(true);
                             }
+                          } else {
+                            // If already marked, allow editing
+                             setSelectedSubject(subject);
+                             setEditingRecord(true);
+                             setQuickMarkVisible(true);
                           }
                         }}
-                        activeOpacity={isMarked ? 1 : 0.7}
-                        disabled={isMarked}
+                         activeOpacity={0.7} // Always allow press for editing
                       >
                         <View style={styles.classLeft}>
                           <View style={[
                             styles.classIcon,
-                            isMarked && { 
-                              backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                ? 'rgba(16, 185, 129, 0.2)' 
+                            isMarked && {
+                              backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)'
+                                : 'rgba(59, 130, 246, 0.2)' // Holiday
                             }
                           ]}>
-                            <Ionicons 
-                              name={subject.classType === 'Lecture' ? 'school-outline' : subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'} 
-                              size={20} 
+                            <Ionicons
+                              name={subject.classType === 'Lecture' ? 'school-outline' : subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'}
+                              size={20}
                               color={
-                                isMarked 
-                                  ? (dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                      ? '#10b981' 
+                                isMarked
+                                  ? (dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                      ? '#10b981'
                                       : dateRecord.status === 'Absent'
                                       ? '#ef4444'
-                                      : '#3b82f6')
+                                      : '#3b82f6') // Holiday
                                   : '#8b5cf6'
                               }
                             />
                           </View>
                           <View style={styles.classInfo}>
                             <View style={styles.classNameRow}>
-                              <Text style={styles.className}>{subject.name}</Text>
+                              <Text style={styles.className} numberOfLines={1} ellipsizeMode="tail">{subject.name}</Text>
                               {subject.isParallel && (
                                 <View style={styles.parallelTag}>
                                   <Text style={styles.parallelTagText}>Choice</Text>
@@ -492,63 +593,51 @@ export default function HistoryScreen() {
                           </View>
                         </View>
                         <View style={styles.classRight}>
-                          {isMarked ? (
-                            <View style={[styles.statusBadge, { 
-                              backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                ? 'rgba(16, 185, 129, 0.2)' 
+                           {isMarked ? (
+                            <View style={[styles.statusBadge, {
+                              backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)',
-                              borderColor: dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                ? '#10b981' 
+                                : 'rgba(59, 130, 246, 0.2)', // Holiday
+                              borderColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                ? '#10b981'
                                 : dateRecord.status === 'Absent'
                                 ? '#ef4444'
-                                : '#3b82f6'
+                                : '#3b82f6' // Holiday
                             }]}>
-                              <Ionicons 
-                                name="checkmark-circle" 
-                                size={16} 
+                               {/* Updated Icon Logic */}
+                              <Ionicons
+                                name={
+                                  dateRecord.status === 'Present' ? 'checkmark-circle' :
+                                  dateRecord.status === 'Absent' ? 'close-circle' :
+                                  dateRecord.status === 'OD' ? 'briefcase' :
+                                  dateRecord.status === 'Holiday' ? 'home' : 'help-circle' // Fallback icon
+                                }
+                                size={16}
                                 color={
-                                  dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                    ? '#10b981' 
+                                  dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                    ? '#10b981'
                                     : dateRecord.status === 'Absent'
                                     ? '#ef4444'
-                                    : '#3b82f6'
+                                    : '#3b82f6' // Holiday
                                 }
                               />
                               <Text style={[styles.statusText, {
-                                color: dateRecord.status === 'Present' || dateRecord.status === 'OD' 
-                                  ? '#10b981' 
+                                color: dateRecord.status === 'Present' || dateRecord.status === 'OD'
+                                  ? '#10b981'
                                   : dateRecord.status === 'Absent'
                                   ? '#ef4444'
-                                  : '#3b82f6'
+                                  : '#3b82f6' // Holiday
                               }]}>
                                 {dateRecord.status}
                               </Text>
                             </View>
                           ) : (
-                            <View style={styles.markButton}>
-                              <Ionicons name="add-circle-outline" size={20} color="#8b5cf6" />
-                              <Text style={styles.markButtonText}>Mark</Text>
-                            </View>
+                             <Ionicons name="chevron-forward" size={20} color="#6b7280" />
                           )}
                         </View>
                       </TouchableOpacity>
-                      
-                      {isMarked && (
-                        <TouchableOpacity
-                          style={styles.editButton}
-                          onPress={() => {
-                            setSelectedSubject(subject);
-                            setEditingRecord(true);
-                            setQuickMarkVisible(true);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="create-outline" size={18} color="#8b5cf6" />
-                          <Text style={styles.editButtonText}>Edit</Text>
-                        </TouchableOpacity>
-                      )}
                     </View>
                   );
                 })}
@@ -557,80 +646,86 @@ export default function HistoryScreen() {
           </View>
         )}
 
+
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      {/* Parallel Class Selection Modal */}
-      <Modal
-        visible={parallelClassModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setParallelClassModalVisible(false)}
+      {/* Parallel Class Selection Modal (remains the same) */}
+       <Modal
+          visible={parallelClassModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setParallelClassModalVisible(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setParallelClassModalVisible(false)}
-        >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Your Class</Text>
-              <Text style={styles.modalSubtitle}>Choose which class you're attending</Text>
-            </View>
-            
-            {selectedParallelClasses.map((option: any, index: number) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.parallelOption}
-                onPress={() => handleParallelClassSelection(option.subject)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.parallelOptionLeft}>
-                  <View style={styles.parallelIconContainer}>
-                    <Ionicons 
-                      name={option.subject.classType === 'Lecture' ? 'school-outline' : option.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'} 
-                      size={24} 
-                      color="#8b5cf6" 
-                    />
-                  </View>
-                  <Text style={styles.parallelOptionText}>{option.subject.name}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#6b7280" />
-              </TouchableOpacity>
-            ))}
-            
-            <TouchableOpacity
-              style={styles.modalCancelBtn}
+          <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
               onPress={() => setParallelClassModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+          >
+              <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+                  <View style={styles.modalHeader}>
+                      <Text style={styles.modalTitle}>Select Parallel Class</Text>
+                      <Text style={styles.modalSubtitle}>Choose the class you attended</Text>
+                  </View>
+
+                  {selectedParallelClasses.map((option: any, index: number) => (
+                      <TouchableOpacity
+                          key={index}
+                          style={styles.parallelOption}
+                          onPress={() => handleParallelClassSelection(option.subject)}
+                          activeOpacity={0.7}
+                      >
+                          <View style={styles.parallelOptionLeft}>
+                              <View style={styles.parallelIconContainer}>
+                                  <Ionicons
+                                      name={option.subject.classType === 'Lecture' ? 'school-outline' : option.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'}
+                                      size={24}
+                                      color="#8b5cf6"
+                                  />
+                              </View>
+                              <Text style={styles.parallelOptionText}>{option.subject.name}</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                  ))}
+
+                  <TouchableOpacity
+                      style={styles.modalCancelBtn} // Reuse style
+                      onPress={() => setParallelClassModalVisible(false)}
+                      activeOpacity={0.7}
+                  >
+                      <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+              </View>
+          </TouchableOpacity>
       </Modal>
 
       {/* Quick Mark Bottom Sheet */}
       <QuickMarkBottomSheet
-        visible={quickMarkVisible}
-        subject={selectedSubject}
-        selectedDate={selectedDate}
-        isEditing={editingRecord}
-        onClose={() => {
-          setQuickMarkVisible(false);
-          setSelectedSubject(null);
-          setEditingRecord(false);
-        }}
-        onSuccess={() => {
-          showToast('Attendance marked successfully!');
-        }}
+          visible={quickMarkVisible}
+          subject={selectedSubject}
+          selectedDate={selectedDate}
+          isEditing={editingRecord}
+          onClose={() => {
+              setQuickMarkVisible(false);
+              setSelectedSubject(null);
+              setEditingRecord(false);
+          }}
+          // Pass showToast directly for success/error handling
+           onSuccess={(message) => showToast(message)}
+           onError={(message) => showToast(message)} // Show error using the same toast
       />
+
+       {/* No custom MarkAllModal needed */}
     </View>
   );
 }
 
+
+// --- Styles (Keep styles from the previous version, removing MarkAllModal styles) ---
 const styles = StyleSheet.create({
-  container: {
+  // ... (All styles from the previous version EXCEPT the MarkAllModal specific styles)
+    container: {
     flex: 1,
     backgroundColor: '#0a0a0a',
   },
@@ -648,12 +743,12 @@ const styles = StyleSheet.create({
   },
   toastContainer: {
     position: 'absolute',
-    top: 60,
+    top: 60, // Adjusted from original to avoid status bar overlap potentially
     left: 20,
     right: 20,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#10b981',
+    backgroundColor: '#10b981', // Default success color
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -675,6 +770,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingTop: 60, // Add padding to avoid status bar overlap
   },
   header: {
     marginBottom: 24,
@@ -758,6 +854,8 @@ const styles = StyleSheet.create({
   },
   statItem: {
     alignItems: 'center',
+    flex: 1, // Ensure equal spacing
+    paddingHorizontal: 4, // Add padding if numbers get too wide
   },
   statNumber: {
     fontSize: 24,
@@ -768,6 +866,7 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     color: '#6b7280',
+    textAlign: 'center', // Center label text
   },
   calendarCard: {
     backgroundColor: '#1a1a1a',
@@ -783,14 +882,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#262626',
   },
-  weekDayText: {
+   weekDayText: {
     color: '#6b7280',
     fontSize: 12,
     fontWeight: '600',
-    width: 40,
+    width: `${100 / 7}%`, // Ensure equal width
     textAlign: 'center',
   },
-  calendarGrid: {
+   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
@@ -806,8 +905,9 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   calendarDayToday: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderRadius: 8,
+    // Optional: Highlight today differently
+    // backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    // borderRadius: 8,
   },
   calendarDaySelected: {
     backgroundColor: '#8b5cf6',
@@ -822,7 +922,7 @@ const styles = StyleSheet.create({
     color: '#4b5563',
   },
   dayNumberToday: {
-    color: '#3b82f6',
+    color: '#3b82f6', // Make today's number blue
     fontWeight: '700',
   },
   dayNumberSelected: {
@@ -831,17 +931,16 @@ const styles = StyleSheet.create({
   },
   attendanceDot: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
+    bottom: 4, // Adjusted position
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.8)', // Green with slight transparency
     justifyContent: 'center',
     alignItems: 'center',
   },
   attendanceDotAbsent: {
-    backgroundColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.8)', // Red with slight transparency
   },
   attendanceDotText: {
     color: '#ffffff',
@@ -855,7 +954,14 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   selectedDateHeader: {
+    flexDirection: 'row', // Added for button alignment
+    justifyContent: 'space-between', // Added for button alignment
+    alignItems: 'center', // Added for button alignment
     marginBottom: 16,
+  },
+   selectedDateTitleContainer: { // New container for title/subtitle
+    flex: 1, // Allow title to take available space
+    marginRight: 12, // Space before button
   },
   selectedDateTitle: {
     fontSize: 18,
@@ -866,6 +972,20 @@ const styles = StyleSheet.create({
   selectedDateSubtitle: {
     fontSize: 14,
     color: '#6b7280',
+  },
+   markAllButton: { // Style for the new button
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  markAllButtonText: {
+    color: '#8b5cf6',
+    fontSize: 14,
+    fontWeight: '600',
   },
   noClassesBox: {
     alignItems: 'center',
@@ -882,7 +1002,7 @@ const styles = StyleSheet.create({
   classItem: {
     backgroundColor: '#262626',
     borderRadius: 12,
-    overflow: 'hidden',
+    // overflow: 'hidden', // Removed
   },
   classMainContent: {
     flexDirection: 'row',
@@ -893,7 +1013,8 @@ const styles = StyleSheet.create({
   classLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    flex: 1, // Allow left side to grow
+    marginRight: 8, // Add margin to prevent overlap
     gap: 12,
   },
   classIcon: {
@@ -905,7 +1026,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   classInfo: {
-    flex: 1,
+     flex: 1, // Allow info to take available space
   },
   classNameRow: {
     flexDirection: 'row',
@@ -917,6 +1038,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#ffffff',
+    flexShrink: 1, // Allow name to shrink if needed
   },
   parallelTag: {
     backgroundColor: 'rgba(245, 158, 11, 0.2)',
@@ -937,7 +1059,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   classRight: {
-    marginLeft: 12,
+     marginLeft: 'auto', // Push to the right
   },
   statusBadge: {
     flexDirection: 'row',
@@ -952,47 +1074,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  markButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-  },
-  markButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8b5cf6',
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
-  },
-  editButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8b5cf6',
-  },
   bottomPadding: {
-    height: 100,
+    height: 100, // Ensure content doesn't hide behind tab bar
   },
-  modalOverlay: {
+   modalOverlay: { // Shared overlay style
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  modalContent: {
+   modalContent: { // For Parallel Class Modal
     backgroundColor: '#1a1a1a',
     borderRadius: 20,
     padding: 24,
@@ -1001,18 +1093,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#262626',
   },
-  modalHeader: {
+    modalHeader: { // Shared style for modal headers
     marginBottom: 20,
+    alignItems: 'center', // Center header text
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
+   modalTitle: { // Shared style
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#E0E0E0',
+    marginBottom: 8,
+    textAlign: 'center',
   },
-  modalSubtitle: {
+  modalSubtitle: { // Shared style
     fontSize: 14,
-    color: '#6b7280',
+    color: '#A0A0A0',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   parallelOption: {
     flexDirection: 'row',
@@ -1045,7 +1141,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     flex: 1,
   },
-  modalCancelBtn: {
+  modalCancelBtn: { // Style for the smaller cancel button in parallel modal
     backgroundColor: '#262626',
     padding: 16,
     borderRadius: 12,
