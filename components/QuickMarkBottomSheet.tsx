@@ -3,14 +3,14 @@ import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Modal,
-    PanResponder,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Modal,
+  PanResponder,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -22,6 +22,7 @@ interface QuickMarkBottomSheetProps {
   visible: boolean;
   subject: AppSubject | null;
   selectedDate?: Date | null;
+  isEditing?: boolean;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -32,10 +33,11 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
   visible,
   subject,
   selectedDate,
+  isEditing = false,
   onClose,
   onSuccess,
 }) => {
-  const { addAttendance } = useSubjects();
+  const { addAttendance, updateAttendance } = useSubjects();
   const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const translateY = useRef(new Animated.Value(BOTTOM_SHEET_HEIGHT)).current;
@@ -50,6 +52,15 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
         tension: 50,
         friction: 8,
       }).start();
+
+      // Preselect existing status when editing
+      if (isEditing && subject && selectedDate) {
+        const dateToMatch = selectedDate.toISOString().split('T')[0];
+        const existing = subject.history.find(r => r.date === dateToMatch);
+        if (existing) {
+          setSelectedStatus(existing.status as AttendanceStatus);
+        }
+      }
     } else {
       Animated.timing(translateY, {
         toValue: BOTTOM_SHEET_HEIGHT,
@@ -58,7 +69,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
       }).start();
       setSelectedStatus(null);
     }
-  }, [visible]);
+  }, [visible, isEditing, subject, selectedDate]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -120,10 +131,25 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     }
 
     setSaving(true);
-    // Use selectedDate if provided, otherwise use today
     const dateToMark = selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-    
-    // Check if already marked
+
+    if (isEditing) {
+      // Update existing record
+      const success = await updateAttendance(subject.id, dateToMark, selectedStatus);
+      if (success) {
+        showToast('Attendance updated successfully!');
+        setTimeout(() => {
+          handleClose();
+          onSuccess?.();
+        }, 1200);
+      } else {
+        showToast('Failed to update attendance');
+      }
+      setSaving(false);
+      return;
+    }
+
+    // Add new record path
     const alreadyMarked = subject.history.some(record => record.date === dateToMark);
     if (alreadyMarked) {
       showToast('Attendance already marked for this date');
