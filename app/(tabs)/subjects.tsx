@@ -157,9 +157,21 @@ export default function SubjectsScreen() {
             </View>
           </View>
 
-          <View style={styles.scheduleRow}>
-            <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-            <Text style={styles.scheduleText}>{subject.days.join(', ')} - {subject.timeSlot}</Text>
+          <View style={styles.scheduleSection}>
+            <View style={styles.scheduleHeader}>
+              <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+              <Text style={styles.scheduleTitle}>Schedule</Text>
+            </View>
+            {subject.schedule && subject.schedule.length > 0 ? (
+              subject.schedule.map((entry, index) => (
+                <View key={index} style={styles.scheduleEntry}>
+                  <Text style={styles.scheduleDay}>{entry.day}</Text>
+                  <Text style={styles.scheduleTime}>Slot {entry.slotNumber} • {entry.timeString}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.scheduleText}>No schedule available</Text>
+            )}
           </View>
         </View>
 
@@ -402,10 +414,39 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
-  scheduleRow: {
+  scheduleSection: {
+    gap: 8,
+  },
+  scheduleHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 4,
+  },
+  scheduleTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  scheduleEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: '#8b5cf6',
+  },
+  scheduleDay: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  scheduleTime: {
+    fontSize: 12,
+    color: '#9ca3af',
   },
   scheduleText: {
     fontSize: 13,

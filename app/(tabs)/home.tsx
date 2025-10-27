@@ -5,37 +5,91 @@ import { AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
-// Generate schedule from subjects data
-const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string) => {
-  const dayMap: Record<string, number> = {
-    'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7
-  };
+// Generate schedule from subjects data using the schedule array
+const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, userPreferences?: Record<string, string>) => {
+  const scheduleItems: Array<{
+    name: string;
+    time: string;
+    icon: string;
+    subjectId: string;
+    slotNumber: number;
+    isParallel?: boolean;
+    parallelOptions?: Array<{ name: string; subjectId: string; icon: string }>;
+  }> = [];
   
-  const dayNumber = dayMap[dayName];
-  if (!dayNumber) return [];
+  // Collect all schedule entries for this day from all subjects
+  const slotMap = new Map<number, Array<{ subject: AppSubject; entry: any }>>();
   
-  return subjects
-    .filter(subject => subject.days.includes(dayName))
-    .map(subject => ({
-      name: subject.name,
-      time: subject.timeSlot || 'Time TBD',
-      icon: subject.classType === 'Lecture' ? 'school-outline' : 
-            subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
-      subjectId: subject.id,
-    }));
+  subjects.forEach(subject => {
+    if (subject.schedule && subject.schedule.length > 0) {
+      subject.schedule
+        .filter(entry => entry.day === dayName)
+        .forEach(entry => {
+          if (!slotMap.has(entry.slotNumber)) {
+            slotMap.set(entry.slotNumber, []);
+          }
+          slotMap.get(entry.slotNumber)!.push({ subject, entry });
+        });
+    }
+  });
+  
+  // Process each slot
+  slotMap.forEach((items, slotNumber) => {
+    if (items.length > 1) {
+      // Parallel classes detected
+      const preferenceKey = `${dayName}_${slotNumber}`;
+      const preferredSubjectId = userPreferences?.[preferenceKey];
+      
+      // Find preferred subject or use first one
+      const selectedItem = preferredSubjectId 
+        ? items.find(item => item.subject.id === preferredSubjectId) || items[0]
+        : items[0];
+      
+      scheduleItems.push({
+        name: selectedItem.subject.name,
+        time: selectedItem.entry.timeString,
+        icon: selectedItem.subject.classType === 'Lecture' ? 'school-outline' : 
+              selectedItem.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+        subjectId: selectedItem.subject.id,
+        slotNumber: slotNumber,
+        isParallel: true,
+        parallelOptions: items.map(item => ({
+          name: item.subject.name,
+          subjectId: item.subject.id,
+          icon: item.subject.classType === 'Lecture' ? 'school-outline' : 
+                item.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+        })),
+      });
+    } else {
+      // Single class
+      const item = items[0];
+      scheduleItems.push({
+        name: item.subject.name,
+        time: item.entry.timeString,
+        icon: item.subject.classType === 'Lecture' ? 'school-outline' : 
+              item.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+        subjectId: item.subject.id,
+        slotNumber: slotNumber,
+      });
+    }
+  });
+  
+  // Sort by slot number to show in correct order
+  return scheduleItems.sort((a, b) => a.slotNumber - b.slotNumber);
 };
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -49,6 +103,8 @@ const HomeScreen = () => {
   const [percentageText, setPercentageText] = useState('0');
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
+  const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
+  const [selectedParallelClass, setSelectedParallelClass] = useState<any>(null);
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -195,6 +251,10 @@ const HomeScreen = () => {
         </View>
       </View>
     );
+  }
+
+  function handleParallelClassSelection(subjectId: any): void {
+    throw new Error('Function not implemented.');
   }
 
   return (
@@ -391,6 +451,57 @@ const HomeScreen = () => {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* Parallel Class Selection Modal */}
+      <Modal
+        visible={parallelClassModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setParallelClassModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setParallelClassModalVisible(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Your Class</Text>
+              <Text style={styles.modalSubtitle}>Choose which class you're attending</Text>
+            </View>
+            
+            {selectedParallelClass?.parallelOptions?.map((option: any, index: number) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.parallelOption,
+                  option.subjectId === selectedParallelClass.subjectId && styles.parallelOptionSelected
+                ]}
+                onPress={() => handleParallelClassSelection(option.subjectId)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.parallelOptionLeft}>
+                  <View style={styles.parallelIconContainer}>
+                    <Ionicons name={option.icon as any} size={24} color="#8b5cf6" />
+                  </View>
+                  <Text style={styles.parallelOptionText}>{option.name}</Text>
+                </View>
+                {option.subjectId === selectedParallelClass.subjectId && (
+                  <Ionicons name="checkmark-circle" size={24} color="#8b5cf6" />
+                )}
+              </TouchableOpacity>
+            ))}
+            
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setParallelClassModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Quick Mark Bottom Sheet */}
       <QuickMarkBottomSheet
@@ -700,6 +811,82 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '500',
     marginTop: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  modalHeader: {
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  parallelOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0a0a0a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#262626',
+  },
+  parallelOptionSelected: {
+    borderColor: '#8b5cf6',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+  },
+  parallelOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  parallelIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  parallelOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    flex: 1,
+  },
+  modalCancelBtn: {
+    backgroundColor: '#262626',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });
 

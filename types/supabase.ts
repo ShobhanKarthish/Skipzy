@@ -51,6 +51,12 @@ export interface AppAttendanceRecord {
   notes: string | null;
 }
 
+export interface AppTimetableEntry {
+  day: string; // e.g., 'Mon', 'Tue'
+  slotNumber: number; // 1-4
+  timeString: string; // e.g., '7:45 AM - 8:45 AM'
+}
+
 export interface AppSubject {
   id: string;
   name: string;
@@ -60,6 +66,7 @@ export interface AppSubject {
   timeSlot: string; // e.g., 'Slot 1' derived from DbTimetableSlot
   classType: 'Lecture' | 'Lab' | 'OPD';
   history: AppAttendanceRecord[];
+  schedule: AppTimetableEntry[]; // Detailed schedule information
 }
 
 export interface AppUserProfile {

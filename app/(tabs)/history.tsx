@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
   Animated,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,11 +15,13 @@ import {
 } from 'react-native';
 
 export default function HistoryScreen() {
-  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth } = useSubjects();
+  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth, addAttendance } = useSubjects();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [editingRecord, setEditingRecord] = useState<boolean>(false);
+  const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
+  const [selectedParallelClasses, setSelectedParallelClasses] = useState<any[]>([]);
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -135,13 +138,67 @@ export default function HistoryScreen() {
     return days;
   };
 
-  // Get subjects for a specific date (based on day of week)
-  const getSubjectsForDate = (date: Date): AppSubject[] => {
+  // Get subjects for a specific date (based on day of week) with their schedule details
+  const getSubjectsForDate = (date: Date): Array<AppSubject & { scheduleEntry?: any; isParallel?: boolean; parallelOptions?: any[] }> => {
     const dayOfWeek = date.getDay();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
 
-    return subjects.filter(subject => subject.days.includes(dayName));
+    // Group subjects by slot number to detect parallel classes
+    const slotMap = new Map<number, Array<{ subject: AppSubject; entry: any }>>();
+    
+    subjects.forEach(subject => {
+      if (subject.schedule && subject.schedule.length > 0) {
+        const daySchedules = subject.schedule.filter(entry => entry.day === dayName);
+        
+        daySchedules.forEach(entry => {
+          if (!slotMap.has(entry.slotNumber)) {
+            slotMap.set(entry.slotNumber, []);
+          }
+          slotMap.get(entry.slotNumber)!.push({ subject, entry });
+        });
+      }
+    });
+
+    const subjectsWithSchedule: Array<AppSubject & { scheduleEntry?: any; isParallel?: boolean; parallelOptions?: any[] }> = [];
+    
+    // Process each slot
+    slotMap.forEach((items, slotNumber) => {
+      if (items.length > 1) {
+        // Parallel classes - show first one with parallel flag
+        const firstItem = items[0];
+        subjectsWithSchedule.push({
+          ...firstItem.subject,
+          scheduleEntry: firstItem.entry,
+          isParallel: true,
+          parallelOptions: items.map(item => ({
+            subject: item.subject,
+            entry: item.entry,
+          })),
+        });
+      } else {
+        // Single class
+        const item = items[0];
+        subjectsWithSchedule.push({
+          ...item.subject,
+          scheduleEntry: item.entry,
+        });
+      }
+    });
+    
+    // Sort by slot number
+    return subjectsWithSchedule.sort((a, b) => {
+      const slotA = a.scheduleEntry?.slotNumber || 0;
+      const slotB = b.scheduleEntry?.slotNumber || 0;
+      return slotA - slotB;
+    });
+  };
+
+  const handleParallelClassSelection = (subject: AppSubject) => {
+    setSelectedSubject(subject);
+    setParallelClassModalVisible(false);
+    setEditingRecord(false);
+    setQuickMarkVisible(true);
   };
 
   // Handle date selection
@@ -363,22 +420,33 @@ export default function HistoryScreen() {
               </View>
             ) : (
               <View style={styles.classList}>
-                {selectedDaySubjects.map(subject => {
+                {selectedDaySubjects.map((subject, index) => {
                   const dateRecord = subject.history.find(h => h.date === selectedDateStr);
                   const isMarked = !!dateRecord;
+                  
+                  // Create unique key combining subject ID and slot number (or index as fallback)
+                  const uniqueKey = subject.scheduleEntry 
+                    ? `${subject.id}_slot_${subject.scheduleEntry.slotNumber}` 
+                    : `${subject.id}_${index}`;
 
                   return (
                     <View
-                      key={subject.id}
+                      key={uniqueKey}
                       style={styles.classItem}
                     >
                       <TouchableOpacity
                         style={styles.classMainContent}
                         onPress={() => {
                           if (!isMarked) {
-                            setSelectedSubject(subject);
-                            setEditingRecord(false);
-                            setQuickMarkVisible(true);
+                            // Check if this is a parallel class
+                            if (subject.isParallel && subject.parallelOptions) {
+                              setSelectedParallelClasses(subject.parallelOptions);
+                              setParallelClassModalVisible(true);
+                            } else {
+                              setSelectedSubject(subject);
+                              setEditingRecord(false);
+                              setQuickMarkVisible(true);
+                            }
                           }
                         }}
                         activeOpacity={isMarked ? 1 : 0.7}
@@ -410,8 +478,17 @@ export default function HistoryScreen() {
                             />
                           </View>
                           <View style={styles.classInfo}>
-                            <Text style={styles.className}>{subject.name}</Text>
-                            <Text style={styles.classTime}>{subject.timeSlot}</Text>
+                            <View style={styles.classNameRow}>
+                              <Text style={styles.className}>{subject.name}</Text>
+                              {subject.isParallel && (
+                                <View style={styles.parallelTag}>
+                                  <Text style={styles.parallelTagText}>Choice</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.classTime}>
+                              {subject.scheduleEntry ? `Slot ${subject.scheduleEntry.slotNumber} • ${subject.scheduleEntry.timeString}` : subject.timeSlot}
+                            </Text>
                           </View>
                         </View>
                         <View style={styles.classRight}>
@@ -482,6 +559,56 @@ export default function HistoryScreen() {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* Parallel Class Selection Modal */}
+      <Modal
+        visible={parallelClassModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setParallelClassModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setParallelClassModalVisible(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Your Class</Text>
+              <Text style={styles.modalSubtitle}>Choose which class you're attending</Text>
+            </View>
+            
+            {selectedParallelClasses.map((option: any, index: number) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.parallelOption}
+                onPress={() => handleParallelClassSelection(option.subject)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.parallelOptionLeft}>
+                  <View style={styles.parallelIconContainer}>
+                    <Ionicons 
+                      name={option.subject.classType === 'Lecture' ? 'school-outline' : option.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'} 
+                      size={24} 
+                      color="#8b5cf6" 
+                    />
+                  </View>
+                  <Text style={styles.parallelOptionText}>{option.subject.name}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            ))}
+            
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setParallelClassModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Quick Mark Bottom Sheet */}
       <QuickMarkBottomSheet
@@ -780,11 +907,30 @@ const styles = StyleSheet.create({
   classInfo: {
     flex: 1,
   },
+  classNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   className: {
     fontSize: 15,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 4,
+  },
+  parallelTag: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  parallelTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
   },
   classTime: {
     fontSize: 13,
@@ -838,5 +984,77 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  modalHeader: {
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  parallelOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0a0a0a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  parallelOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  parallelIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  parallelOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    flex: 1,
+  },
+  modalCancelBtn: {
+    backgroundColor: '#262626',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });

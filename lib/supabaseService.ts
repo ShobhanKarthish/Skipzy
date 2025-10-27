@@ -1,15 +1,26 @@
 import {
   AppAttendanceRecord,
   AppSubject,
+  AppTimetableEntry,
   AppUserProfile,
   CreateAttendanceRecordData
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
 // Helper functions
+// Database stores: 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday, 1=Sunday
+// This matches JavaScript Date.getDay() + 1 where getDay() returns 0=Sunday, 1=Monday, etc.
 const dayNumberToName = (dayNumber: number): string => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return days[dayNumber - 1] || 'Unknown';
+  const dayMap: Record<number, string> = {
+    1: 'Sun',
+    2: 'Mon',
+    3: 'Tue',
+    4: 'Wed',
+    5: 'Thu',
+    6: 'Fri',
+    7: 'Sat'
+  };
+  return dayMap[dayNumber] || 'Unknown';
 };
 
 const slotNumberToTimeSlot = (slotNumber: number): string => {
@@ -172,6 +183,12 @@ export const subjectService = {
         }
       }
 
+      // Ensure userData is not null before proceeding
+      if (!userData) {
+        console.error('Failed to get or create user profile');
+        return [];
+      }
+
       // Get all subjects (fixed timetable)
       const { data: subjects, error: subjectsError } = await supabase
         .from('subjects')
@@ -217,6 +234,15 @@ export const subjectService = {
       // Transform data to AppSubject format
       const transformedSubjects = subjects.map(subject => {
         const subjectTimetableSlots = timetableSlots.filter(slot => slot.subject_id === subject.id);
+        
+        // Create detailed schedule array
+        const schedule: AppTimetableEntry[] = subjectTimetableSlots.map(slot => ({
+          day: dayNumberToName(slot.day_of_week),
+          slotNumber: slot.slot_number,
+          timeString: slotNumberToTimeSlot(slot.slot_number),
+        }));
+
+        // For backward compatibility, keep days and timeSlot
         const days = subjectTimetableSlots.map(slot => dayNumberToName(slot.day_of_week));
         const timeSlot = subjectTimetableSlots.length > 0 
           ? slotNumberToTimeSlot(subjectTimetableSlots[0].slot_number) 
@@ -239,6 +265,7 @@ export const subjectService = {
           timeSlot,
           classType: subject.subject_type,
           history: subjectAttendanceRecords,
+          schedule: schedule, // Add the detailed schedule
         };
       });
       
@@ -287,6 +314,12 @@ export const attendanceService = {
         } else {
           userData = insertRes.data;
         }
+      }
+
+      // Ensure userData is not null before proceeding
+      if (!userData) {
+        console.error('Failed to get or create user profile');
+        return false;
       }
 
       const { error } = await supabase
