@@ -136,16 +136,16 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     if (isEditing) {
       // Update existing record
       const success = await updateAttendance(subject.id, dateToMark, selectedStatus);
+      setSaving(false);
       if (success) {
+        onSuccess?.(); // Call immediately to update UI
         showToast('Attendance updated successfully!');
         setTimeout(() => {
           handleClose();
-          onSuccess?.();
-        }, 1200);
+        }, 800);
       } else {
         showToast('Failed to update attendance');
       }
-      setSaving(false);
       return;
     }
 
@@ -164,18 +164,17 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     };
 
     const success = await addAttendance(subject.id, record);
+    setSaving(false);
     
     if (success) {
+      onSuccess?.(); // Call immediately to update UI
       showToast('Attendance marked successfully!');
       setTimeout(() => {
         handleClose();
-        onSuccess?.();
-      }, 1500);
+      }, 800);
     } else {
       showToast('Failed to mark attendance');
     }
-    
-    setSaving(false);
   };
 
   const getStatusIcon = (status: AttendanceStatus) => {

@@ -2,11 +2,7 @@ import {
   AppAttendanceRecord,
   AppSubject,
   AppUserProfile,
-  AttendanceService,
-  AuthService,
-  CreateAttendanceRecordData,
-  SubjectService,
-  UserService
+  CreateAttendanceRecordData
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
@@ -21,8 +17,7 @@ const slotNumberToTimeSlot = (slotNumber: number): string => {
     1: '7:45 AM - 8:45 AM',
     2: '8:45 AM - 9:45 AM',
     3: '9:45 AM - 1:30 PM',
-    4: '1:30 PM - 2:15 PM',
-    5: '2:15 PM - 3:15 PM',
+    4: '2:15 PM - 3:15 PM',
   };
   return slots[slotNumber] || 'Unknown';
 };
@@ -51,15 +46,39 @@ export const userService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return null;
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('auth_id', user.id)
-        .single();
+        .maybeSingle();
+
+      if (!data) {
+        const name = (user.user_metadata && (user.user_metadata.name as string)) || user.email?.split('@')[0] || 'User';
+        const insertRes = await supabase
+          .from('users')
+          .insert({ auth_id: user.id, name, email: user.email ?? '' })
+          .select('*')
+          .maybeSingle();
+        if (insertRes.error) {
+          // If duplicate key (trigger already created it), re-fetch
+          if (insertRes.error.code === '23505') {
+            const refetch = await supabase
+              .from('users')
+              .select('*')
+              .eq('auth_id', user.id)
+              .maybeSingle();
+            data = refetch.data as any;
+          } else {
+            console.error('Error creating user profile:', insertRes.error);
+            return null;
+          }
+        } else {
+          data = insertRes.data as any;
+        }
+      }
 
       if (error) {
         console.error('Error fetching user:', error);
-        return null;
       }
 
       return {
@@ -80,6 +99,14 @@ export const userService = {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return false;
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', user.id)
+        .single();
+
+      if (userError || !userData) return false;
 
       const updateData: any = {};
       if (updates.name !== undefined) updateData.name = updates.name;
@@ -113,14 +140,37 @@ export const subjectService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return [];
 
-      // Get user ID
-      const { data: userData, error: userError } = await supabase
+      // Ensure user profile exists
+      let { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
         .eq('auth_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (userError || !userData) return [];
+      if (!userData) {
+        const name = (user.user_metadata && (user.user_metadata.name as string)) || user.email?.split('@')[0] || 'User';
+        const insertRes = await supabase
+          .from('users')
+          .insert({ auth_id: user.id, name, email: user.email ?? '' })
+          .select('id')
+          .maybeSingle();
+        if (insertRes.error) {
+          // If duplicate key (trigger already created it), re-fetch
+          if (insertRes.error.code === '23505') {
+            const refetch = await supabase
+              .from('users')
+              .select('id')
+              .eq('auth_id', user.id)
+              .maybeSingle();
+            userData = refetch.data as any;
+          } else {
+            console.error('Error ensuring user profile exists:', insertRes.error);
+            return [];
+          }
+        } else {
+          userData = insertRes.data;
+        }
+      }
 
       // Get all subjects (fixed timetable)
       const { data: subjects, error: subjectsError } = await supabase
@@ -208,13 +258,36 @@ export const attendanceService = {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return false;
 
-      const { data: userData, error: userError } = await supabase
+      let { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
         .eq('auth_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (userError || !userData) return false;
+      if (!userData) {
+        const name = (user.user_metadata && (user.user_metadata.name as string)) || user.email?.split('@')[0] || 'User';
+        const insertRes = await supabase
+          .from('users')
+          .insert({ auth_id: user.id, name, email: user.email ?? '' })
+          .select('id')
+          .maybeSingle();
+        if (insertRes.error) {
+          // If duplicate key (trigger already created it), re-fetch
+          if (insertRes.error.code === '23505') {
+            const refetch = await supabase
+              .from('users')
+              .select('id')
+              .eq('auth_id', user.id)
+              .maybeSingle();
+            userData = refetch.data as any;
+          } else {
+            console.error('Error ensuring user profile exists:', insertRes.error);
+            return false;
+          }
+        } else {
+          userData = insertRes.data;
+        }
+      }
 
       const { error } = await supabase
         .from('attendance_records')
@@ -372,20 +445,8 @@ export const authService = {
 
       if (error) throw error;
 
-      if (data.user) {
-        try {
-          await supabase
-            .from('users')
-            .insert({
-              auth_id: data.user.id,
-              name: name,
-              email: email,
-              attendance_target: 75,
-            });
-        } catch (profileError) {
-          console.error('Error creating user profile:', profileError);
-        }
-      }
+      // Profile is created by DB trigger on auth.users insert
+      // No need to manually insert here
 
       return { data, error: null };
     } catch (error) {
