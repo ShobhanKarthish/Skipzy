@@ -15,8 +15,13 @@ export default function RootLayout() {
   useEffect(() => {
     // Check initial auth state
     const checkAuth = async () => {
-      const { data: { session } } = await authService.getSession();
-      setIsAuthenticated(!!session);
+      const { data, error } = await authService.getSession();
+      if (error) {
+        console.error('Error getting session:', error);
+        setIsAuthenticated(false);
+        return;
+      }
+      setIsAuthenticated(!!data?.session);
     };
 
     checkAuth();
@@ -27,7 +32,7 @@ export default function RootLayout() {
     });
 
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 

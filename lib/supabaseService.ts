@@ -7,6 +7,11 @@ import {
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
+type AuthResponse<T = any> = {
+  data: T | null;
+  error: { message: string } | null;
+};
+
 // Helper functions
 // Database stores: 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday, 1=Sunday
 // This matches JavaScript Date.getDay() + 1 where getDay() returns 0=Sunday, 1=Monday, etc.
@@ -466,7 +471,7 @@ export const attendanceService = {
 
 // Auth operations
 export const authService = {
-  async signUp(email: string, password: string, name: string) {
+  async signUp(email: string, password: string, name: string): Promise<AuthResponse> {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -482,9 +487,14 @@ export const authService = {
       // No need to manually insert here
 
       return { data, error: null };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in signUp:', error);
-      return { data: null, error };
+      return { 
+        data: null, 
+        error: { 
+          message: error.message || 'An error occurred during sign up' 
+        } 
+      };
     }
   },
 
@@ -514,17 +524,21 @@ export const authService = {
     }
   },
 
-  async resetPassword(email: string) {
+  async resetPassword(email: string): Promise<AuthResponse> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: 'skipzy://reset-password',
       });
 
       if (error) throw error;
-      return { error: null };
+      return { data: null, error: null };
     } catch (error) {
       console.error('Error in resetPassword:', error);
-      return { error };
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { 
+        data: null,
+        error: { message: errorMessage } 
+      };
     }
   },
 

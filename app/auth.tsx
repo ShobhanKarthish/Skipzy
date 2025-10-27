@@ -3,12 +3,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 
 import AuthButton from '../components/ui/AuthButton';
@@ -86,14 +86,17 @@ export default function AuthScreen() {
       const { data, error } = await authService.signIn(email.trim(), password);
 
       if (error) {
-        showToast(error.message, 'error');
+        const errorMessage = error instanceof Error ? error.message : 'Failed to sign in';
+        showToast(errorMessage, 'error');
         return;
       }
       
       // Navigate immediately for better UX
       router.replace('/home' as Href);
       showToast('Welcome back!', 'success');
-      console.log('Signed in user:', data.user);
+      if (data) {
+        console.log('Signed in user:', data.user);
+      }
     } catch (err) {
       console.error('Sign in error:', err);
       showToast('An error occurred. Please try again.', 'error');
