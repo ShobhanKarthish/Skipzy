@@ -272,6 +272,25 @@ const HomeScreen = () => {
     }
   };
 
+  // Get time-based greeting with variety
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    
+    const morningGreetings = ['Good morning', 'Fresh start', 'Morning light'];
+    const afternoonGreetings = ['Good afternoon', 'Easy pace', 'Steady flow'];
+    const eveningGreetings = ['Good evening', 'Calm mind', 'Soft close'];
+    const nightGreetings = ['Good night', 'Rest well', 'Quiet peace'];
+    
+    const getRandomGreeting = (greetings: string[]) => {
+      return greetings[Math.floor(Math.random() * greetings.length)];
+    };
+    
+    if (hour >= 5 && hour < 12) return getRandomGreeting(morningGreetings);
+    if (hour >= 12 && hour < 17) return getRandomGreeting(afternoonGreetings);
+    if (hour >= 17 && hour < 21) return getRandomGreeting(eveningGreetings);
+    return getRandomGreeting(nightGreetings);
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
@@ -284,8 +303,9 @@ const HomeScreen = () => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.greeting}>Good Morning,</Text>
-            <Text style={styles.userName}>{userProfile?.name || 'Student'}</Text>
+            <Text style={styles.greeting}>
+              {getGreeting()}, <Text style={styles.userName}>{userProfile?.name || 'Student'}</Text>
+            </Text>
           </View>
           <TouchableOpacity style={styles.profilePic} activeOpacity={0.7}>
             <Ionicons name="person" size={24} color="#8b5cf6" />
@@ -574,12 +594,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    fontSize: 16,
+    fontSize: 24,
+    fontWeight: '600',
     color: '#9ca3af',
-    marginBottom: 4,
+    flexWrap: 'wrap',
   },
   userName: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: '#ffffff',
   },

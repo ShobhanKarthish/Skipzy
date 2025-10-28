@@ -10,10 +10,10 @@ import 'react-native-reanimated';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check initial auth state
+    // Check initial auth state without blocking
     const checkAuth = async () => {
       const { data, error } = await authService.getSession();
       if (error) {
@@ -35,11 +35,6 @@ export default function RootLayout() {
       subscription?.unsubscribe();
     };
   }, []);
-
-  // Show loading state while checking authentication
-  if (isAuthenticated === null) {
-    return null; // Or return a loading screen
-  }
 
   return (
     <UserProfileProvider>

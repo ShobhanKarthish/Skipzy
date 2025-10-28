@@ -1,8 +1,8 @@
 import { authService } from '@/lib/supabaseService';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -25,26 +25,17 @@ interface FormErrors {
 
 export default function AuthScreen() {
   const router = useRouter();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot-password'>('signup');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signup');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resetCooldown, setResetCooldown] = useState(0);
   const [errors, setErrors] = useState<FormErrors>({});
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [toastVisible, setToastVisible] = useState(false);
-
-  // Cooldown timer for password reset
-  useEffect(() => {
-    if (resetCooldown > 0) {
-      const timer = setTimeout(() => setResetCooldown(resetCooldown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [resetCooldown]);
 
   // Toast function
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -70,11 +61,9 @@ export default function AuthScreen() {
       if (!name.trim()) newErrors.name = 'Name is required';
       else if (name.trim().length < 2) newErrors.name = 'Name must be at least 2 characters';
     }
-    if (mode !== 'forgot-password') {
-      if (!password) newErrors.password = 'Password is required';
-      else if (mode === 'signup' && password.length < 6)
-        newErrors.password = 'Password must be at least 6 characters';
-    }
+    if (!password) newErrors.password = 'Password is required';
+    else if (mode === 'signup' && password.length < 6)
+      newErrors.password = 'Password must be at least 6 characters';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -131,37 +120,14 @@ export default function AuthScreen() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!validateForm()) return;
-    setLoading(true);
-    try {
-      const { error } = await authService.resetPassword(email.trim());
-
-      if (error) {
-        showToast(error.message, 'error');
-        return;
-      }
-      showToast('Password reset link sent! Check your email.', 'success');
-      setResetCooldown(60);
-      setEmail('');
-    } catch (err) {
-      console.error('Password reset error:', err);
-      showToast('An error occurred. Please try again.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSubmit = () => {
     if (mode === 'signin') return handleSignIn();
-    if (mode === 'signup') return handleSignUp();
-    return handleForgotPassword();
+    return handleSignUp();
   };
 
   const getTitle = () => {
     if (mode === 'signin') return { main: 'Welcome Back!', sub: "Oh, you're back? Makes sense" };
-    if (mode === 'signup') return { main: 'Welcome to SKIPZY', sub: 'Attendance matters, but so do you' };
-    return { main: 'Reset Your Password', sub: 'Password? Yeah... I forget that too' };
+    return { main: 'Welcome to SKIPZY', sub: 'Attendance matters, but so do you' };
   };
 
   const title = getTitle();
@@ -178,7 +144,10 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Ionicons name="fitness" size={64} color="#fff" />
+            <Image 
+              source={require('../assets/images/icon.png')} 
+              style={styles.logoImage}
+            />
           </View>
 
           <Text style={styles.mainTitle}>{title.main}</Text>
@@ -207,40 +176,19 @@ export default function AuthScreen() {
               style={styles.input}
             />
 
-            {mode !== 'forgot-password' && (
-              <PasswordInput
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                error={errors.password}
-                style={styles.input}
-              />
-            )}
-
-            {mode === 'signin' && (
-              <View style={styles.forgotPassword}>
-                <Text
-                  style={styles.forgotPasswordText}
-                  onPress={() => setMode('forgot-password')}
-                >
-                  Forgot Password?
-                </Text>
-              </View>
-            )}
+            <PasswordInput
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              error={errors.password}
+              style={styles.input}
+            />
 
             <AuthButton
               onPress={handleSubmit}
-              title={
-                resetCooldown > 0
-                  ? `Wait ${resetCooldown}s`
-                  : mode === 'signin'
-                  ? 'Sign In'
-                  : mode === 'signup'
-                  ? 'Sign Up'
-                  : 'Send Reset Link'
-              }
+              title={mode === 'signin' ? 'Sign In' : 'Sign Up'}
               loading={loading}
-              disabled={loading || resetCooldown > 0}
+              disabled={loading}
               style={styles.button}
             />
 
@@ -253,8 +201,6 @@ export default function AuthScreen() {
             />
           </View>
         </View>
-
-        <Text style={styles.footer}>Made With Love ❤️</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -265,6 +211,7 @@ const styles = StyleSheet.create<Record<string, any>>({
   scrollContent: { flexGrow: 1, justifyContent: 'space-between', padding: 32 },
   content: { flex: 1, justifyContent: 'center', maxWidth: 448, width: '100%', alignSelf: 'center' },
   logoContainer: { alignItems: 'center', marginBottom: 32 },
+  logoImage: { width: 120, height: 120, borderRadius: 24 },
   mainTitle: { fontSize: 30, fontWeight: 'bold', textAlign: 'center', marginBottom: 8, color: '#fff' },
   subtitle: { color: '#999', textAlign: 'center', marginBottom: 48, fontSize: 14 },
   form: { width: '100%' },
@@ -300,6 +247,5 @@ const styles = StyleSheet.create<Record<string, any>>({
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
   switchText: { textAlign: 'center', color: '#999', fontSize: 14 },
   switchLink: { color: '#8b5cf6', fontWeight: '500' },
-  footer: { color: '#999', fontSize: 14, textAlign: 'center', marginTop: 32 },
 });
 

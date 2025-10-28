@@ -33,7 +33,6 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [darkMode, setDarkMode] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [language, setLanguageState] = useState('en');
-  const [isLoaded, setIsLoaded] = useState(false);
 
   // Load user profile from Supabase
   const loadUserProfile = async () => {
@@ -85,16 +84,13 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
     });
 
-    // Load data on mount - parallel execution for better performance
+    // Load data on mount - parallel execution, non-blocking
     const initializeData = async () => {
-      // Load local preferences and check auth session in parallel
+      // Load everything in parallel without blocking render
       const [sessionResult] = await Promise.all([
         authService.getSession(),
         loadLocalPreferences()
       ]);
-      
-      // Set loaded immediately to unblock UI
-      setIsLoaded(true);
       
       // Load user profile in background if signed in
       if (sessionResult.data?.session) {
@@ -102,6 +98,7 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
     };
     
+    // Run initialization without awaiting
     initializeData();
 
     return () => {
@@ -180,11 +177,6 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   const refreshUserProfile = async () => {
     await loadUserProfile();
   };
-
-  // Don't render children until data is loaded
-  if (!isLoaded) {
-    return null; // Or return a loading screen component
-  }
 
   return (
     <UserProfileContext.Provider

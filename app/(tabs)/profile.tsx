@@ -325,7 +325,7 @@ export default function ProfileScreen() {
 
         {/* App Version */}
         <Text style={styles.appVersion}>App Version 1.0.0</Text>
-        <Text style={styles.madeWithLove}>made with love ❤️</Text>
+        <Text style={styles.madeWithLove}>Made With Love ❤️</Text>
 
         <View style={styles.bottomPadding} />
       </ScrollView>
