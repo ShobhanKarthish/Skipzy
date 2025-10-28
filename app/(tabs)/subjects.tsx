@@ -14,8 +14,8 @@ import {
 import Svg, { Circle } from 'react-native-svg';
 
 export default function SubjectsScreen() {
-   const { subjects: allSubjects, loading, error, selectedYear, selectedMonth } = useSubjects();
-  // Filter subjects to only show attendance records for the selected month
+  const { subjects: allSubjects, loading, error, selectedYear, selectedMonth } = useSubjects();
+  console.log('Subjects screen - Year:', selectedYear, 'Month:', selectedMonth); // Add this  
   const subjects = useMemo(() => {
     return allSubjects.map(subject => ({
       ...subject,

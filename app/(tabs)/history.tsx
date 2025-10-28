@@ -4,16 +4,16 @@ import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert, // Keep Alert
-    Animated,
-    Modal, // Keep Modal for Parallel Class selection
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert, // Keep Alert
+  Animated,
+  Modal, // Keep Modal for Parallel Class selection
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
@@ -22,13 +22,7 @@ const ALL_ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 
 // *** REMOVE MarkAllModal Component and its styles ***
 
 export default function HistoryScreen() {
-  const { subjects: allSubjects, loading, error, addAttendance, refreshSubjects } = useSubjects();
-  
-  // Local month state for filtering display only
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
-  
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const { subjects: allSubjects, loading, error, addAttendance, refreshSubjects, selectedYear, selectedMonth, setMonthFilter } = useSubjects();  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [editingRecord, setEditingRecord] = useState<boolean>(false);
@@ -38,6 +32,7 @@ export default function HistoryScreen() {
   // *** Remove markAllModalVisible state ***
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const toastAnim = useRef(new Animated.Value(-100)).current;
 
   // Filter subjects to only show attendance records for the selected month
@@ -76,8 +71,7 @@ export default function HistoryScreen() {
       }
     }
 
-    setSelectedYear(newYear);
-    setSelectedMonth(newMonth);
+    setMonthFilter(newYear, newMonth);
   };
 
   // Check if we're viewing current month
@@ -1151,3 +1145,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
+
+function showToast(arg0: string) {
+  throw new Error('Function not implemented.');
+}

@@ -4,17 +4,15 @@ import { authService } from '@/lib/supabaseService';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
-    Animated,
-    Modal,
-    ScrollView,
-    Share,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Animated,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -159,71 +157,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // --- REVERTED to CSV/Text Export ---
-  // This will work in Expo Go
-  const handleExportData = async () => {
-    showToast('Generating export...'); // Give user feedback
-
-    // 1. Calculate Per-Subject Stats
-    const subjectStats = subjects.map(subject => {
-      const attended = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'OD'
-      ).length;
-      const total = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'Absent'
-      ).length;
-      const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
-      return { name: subject.name, attended, total, percentage };
-    });
-
-    const allAbsences = subjects.flatMap(subject => 
-      subject.history
-        .filter(h => h.status === 'Absent')
-        .map(h => ({ name: subject.name, date: h.date }))
-    );
-
-    // 2. Generate CSV/Text Content
-    let csvContent = 'ATTENDANCE REPORT\n';
-    csvContent += `Student: ${userProfile?.name || 'User'}\n`;
-    csvContent += `Email: ${userProfile?.email || 'N/A'}\n`;
-    csvContent += `Attendance Target: ${userProfile?.attendanceTarget || 75}%\n`;
-    csvContent += '============================\n\n';
-    
-    csvContent += 'OVERALL INSIGHTS\n';
-    csvContent += `Overall Attendance: ${overallStats.percentage}%\n`;
-    csvContent += `Classes Attended: ${overallStats.attended} / ${overallStats.total}\n\n`;
-
-    csvContent += 'ATTENDANCE BY SUBJECT\n';
-    csvContent += 'Subject,Percentage,Classes (Attended/Total)\n';
-    subjectStats.forEach(stat => {
-      csvContent += `"${stat.name}",${stat.percentage}%,${stat.attended}/${stat.total}\n`;
-    });
-    csvContent += '\n';
-
-    csvContent += 'ABSENCE LOG\n';
-    if (allAbsences.length > 0) {
-      csvContent += 'Subject,Date\n';
-      allAbsences.forEach(absence => {
-        const dateString = new Date(absence.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        csvContent += `"${absence.name}","${dateString}"\n`;
-      });
-    } else {
-      csvContent += 'No absences recorded.\n';
-    }
-
-    // 3. Share the text content
-    try {
-      await Share.share({
-        title: 'My Attendance Report',
-        message: csvContent, // Share the generated text
-      });
-      showToast('Export shared successfully!');
-
-    } catch (error) {
-      console.error('Failed to share report:', error);
-      showToast('Failed to export report');
-    }
-  };
 
   // This function now *opens* the confirmation modal
   const handleResetData = () => {
@@ -284,23 +217,8 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.headerInfo}>
               <Text style={styles.userName}>{userProfile?.name || 'User'}</Text>
-              <Text style={styles.userRole}>Student</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.editIcon}
-            onPress={() => {
-              setEditForm({
-                name: userProfile?.name || '',
-                email: userProfile?.email || '',
-                attendanceTarget: userProfile?.attendanceTarget || 75,
-              });
-              setEditModalVisible(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="create-outline" size={24} color="#ffffff" />
-          </TouchableOpacity>
         </View>
 
         {/* Statistics Card */}
@@ -383,35 +301,9 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Preferences Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Preferences</Text>
-          <View style={styles.preferenceRow}>
-            <View style={styles.preferenceLeft}>
-              <Ionicons name="moon" size={20} color="#8b5cf6" style={styles.preferenceIcon} />
-              <Text style={styles.preferenceText}>Dark Mode</Text>
-            </View>
-            <Switch
-              value={darkMode}
-              onValueChange={toggleDarkMode}
-              trackColor={{ false: '#3a3a3a', true: '#8b5cf6' }}
-              thumbColor="#ffffff"
-            />
-          </View>
-        </View>
-
         {/* Data Management Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Data Management</Text>
-          <TouchableOpacity
-            style={styles.actionRow}
-            onPress={handleExportData}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionText}>Export Attendance (CSV)</Text>
-            <Ionicons name="download-outline" size={20} color="#ffffff" />
-          </TouchableOpacity>
-          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionRow}
             onPress={handleResetData} // This now opens the modal
@@ -433,6 +325,7 @@ export default function ProfileScreen() {
 
         {/* App Version */}
         <Text style={styles.appVersion}>App Version 1.0.0</Text>
+        <Text style={styles.madeWithLove}>made with love ❤️</Text>
 
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -670,6 +563,12 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 13,
     marginTop: 8,
+    marginBottom: 8,
+  },
+  madeWithLove: {
+    textAlign: 'center',
+    color: '#9ca3af',
+    fontSize: 14,
     marginBottom: 16,
   },
   bottomPadding: { height: 100 },
