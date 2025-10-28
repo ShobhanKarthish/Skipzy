@@ -3,8 +3,7 @@ import { useSubjects } from '@/contexts/SubjectsContext';
 import { useUserProfile } from '@/contexts/UserProfileContext';
 import { AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -96,7 +95,7 @@ const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, u
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const HomeScreen = () => {
-  const { subjects, loading: subjectsLoading, refreshSubjects } = useSubjects();
+  const { subjects, loading: subjectsLoading } = useSubjects();
   const { userProfile, loading: profileLoading } = useUserProfile();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [progressAnim] = useState(new Animated.Value(0));
@@ -106,15 +105,13 @@ const HomeScreen = () => {
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
   const [selectedParallelClass, setSelectedParallelClass] = useState<any>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Refresh data when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      refreshSubjects();
-      setRefreshKey(prev => prev + 1);
-    }, [])
-  );
+  // Fast lookups: build a subject map once per subjects change
+  const subjectsById = useMemo(() => {
+    const map = new Map<string, AppSubject>();
+    subjects.forEach(s => map.set(s.id, s));
+    return map;
+  }, [subjects]);
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -213,7 +210,7 @@ const HomeScreen = () => {
     } else {
       // Find subject by ID if available, otherwise by name
       const subject = item.subjectId 
-        ? subjects.find(s => s.id === item.subjectId)
+        ? subjectsById.get(item.subjectId)
         : subjects.find(s => 
             s.name.toLowerCase().includes(item.name.toLowerCase()) || 
             item.name.toLowerCase().includes(s.name.toLowerCase())
@@ -228,7 +225,7 @@ const HomeScreen = () => {
 
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const schedule = getScheduleForDate(selectedDate);
+  const schedule = useMemo(() => getScheduleForDate(selectedDate), [subjects, selectedDate]);
   // Use local YYYY-MM-DD to match records and other screens
   const selectedDateKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
 
@@ -555,9 +552,7 @@ const HomeScreen = () => {
           setSelectedSubject(null);
         }}
         onSuccess={() => {
-          // Force refresh to show updated status immediately
-          refreshSubjects();
-          setRefreshKey(prev => prev + 1);
+          // No network refresh needed: SubjectsContext updates optimistically
         }}
       />
     </View>
