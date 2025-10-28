@@ -6,6 +6,9 @@ interface SubjectsContextType {
   subjects: AppSubject[];
   loading: boolean;
   error: string | null;
+  selectedYear: number;
+  selectedMonth: number;
+  setMonthFilter: (year: number, month: number) => void;
   addAttendance: (subjectId: string, record: AppAttendanceRecord) => Promise<boolean>;
   updateAttendance: (subjectId: string, date: string, status: AppAttendanceRecord['status'], notes?: string | null) => Promise<boolean>;
   deleteAttendance: (subjectId: string, date: string) => Promise<boolean>;
@@ -20,6 +23,15 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+
+  // Month filter state (for history and subjects screens only - doesn't affect data fetching)
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+
+  const setMonthFilter = (year: number, month: number) => {
+    setSelectedYear(year);
+    setSelectedMonth(month);
+  };
 
   // Load subjects from Supabase with simple caching
   const loadSubjects = async (forceRefresh = false, showLoading = true) => {
@@ -180,6 +192,9 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
         subjects,
         loading,
         error,
+        selectedYear,
+        selectedMonth,
+        setMonthFilter,
         addAttendance,
         updateAttendance,
         deleteAttendance,
