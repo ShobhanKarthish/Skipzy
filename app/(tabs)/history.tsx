@@ -371,18 +371,6 @@ export default function HistoryScreen() {
     !subject.history.some(h => h.date === selectedDateStr) && !subject.isParallel
   ).length;
 
-  if (loading) {
-     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-            <View style={styles.loadingContainer}>
-                <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
-                <Text style={styles.loadingText}>Loading history...</Text>
-            </View>
-        </View>
-    );
-  }
-
   // --- JSX Rendering ---
   return (
     <View style={styles.container}>
@@ -522,7 +510,7 @@ export default function HistoryScreen() {
               )}
             </View>
 
-            {/* Class List Rendering Logic remains the same */}
+            {/* Class List Rendering Logic */}
               {selectedDaySubjects.length === 0 ? (
               <View style={styles.noClassesBox}>
                 <Ionicons name="calendar-outline" size={32} color="#6b7280" />
@@ -553,13 +541,12 @@ export default function HistoryScreen() {
                               setQuickMarkVisible(true);
                             }
                           } else {
-                            // If already marked, allow editing
-                             setSelectedSubject(subject);
-                             setEditingRecord(true);
-                             setQuickMarkVisible(true);
+                            setSelectedSubject(subject);
+                            setEditingRecord(true);
+                            setQuickMarkVisible(true);
                           }
                         }}
-                         activeOpacity={0.7} // Always allow press for editing
+                        activeOpacity={0.7}
                       >
                         <View style={styles.classLeft}>
                           <View style={[
@@ -569,7 +556,7 @@ export default function HistoryScreen() {
                                 ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)' // Holiday
+                                : 'rgba(59, 130, 246, 0.2)'
                             }
                           ]}>
                             <Ionicons
@@ -581,14 +568,21 @@ export default function HistoryScreen() {
                                       ? '#10b981'
                                       : dateRecord.status === 'Absent'
                                       ? '#ef4444'
-                                      : '#3b82f6') // Holiday
+                                      : '#3b82f6')
                                   : '#8b5cf6'
                               }
                             />
                           </View>
                           <View style={styles.classInfo}>
                             <View style={styles.classNameRow}>
-                              <Text style={styles.className} numberOfLines={1} ellipsizeMode="tail">{subject.name}</Text>
+                              {(() => {
+                                const displayName = subject.isParallel && subject.parallelOptions
+                                  ? subject.parallelOptions.map((opt: any) => opt.subject.name).join(' / ')
+                                  : subject.name;
+                                return (
+                                  <Text style={styles.className} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
+                                );
+                              })()}
                               {subject.isParallel && (
                                 <View style={styles.parallelTag}>
                                   <Text style={styles.parallelTagText}>Choice</Text>
@@ -601,26 +595,25 @@ export default function HistoryScreen() {
                           </View>
                         </View>
                         <View style={styles.classRight}>
-                           {isMarked ? (
+                          {isMarked ? (
                             <View style={[styles.statusBadge, {
                               backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                 ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)', // Holiday
+                                : 'rgba(59, 130, 246, 0.2)',
                               borderColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                 ? '#10b981'
                                 : dateRecord.status === 'Absent'
                                 ? '#ef4444'
-                                : '#3b82f6' // Holiday
+                                : '#3b82f6'
                             }]}>
-                               {/* Updated Icon Logic */}
                               <Ionicons
                                 name={
                                   dateRecord.status === 'Present' ? 'checkmark-circle' :
                                   dateRecord.status === 'Absent' ? 'close-circle' :
                                   dateRecord.status === 'OD' ? 'briefcase' :
-                                  dateRecord.status === 'Holiday' ? 'home' : 'help-circle' // Fallback icon
+                                  dateRecord.status === 'Holiday' ? 'home' : 'help-circle'
                                 }
                                 size={16}
                                 color={
@@ -628,7 +621,7 @@ export default function HistoryScreen() {
                                     ? '#10b981'
                                     : dateRecord.status === 'Absent'
                                     ? '#ef4444'
-                                    : '#3b82f6' // Holiday
+                                    : '#3b82f6'
                                 }
                               />
                               <Text style={[styles.statusText, {
@@ -636,13 +629,13 @@ export default function HistoryScreen() {
                                   ? '#10b981'
                                   : dateRecord.status === 'Absent'
                                   ? '#ef4444'
-                                  : '#3b82f6' // Holiday
+                                  : '#3b82f6'
                               }]}>
                                 {dateRecord.status}
                               </Text>
                             </View>
                           ) : (
-                             <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
                           )}
                         </View>
                       </TouchableOpacity>
@@ -658,7 +651,7 @@ export default function HistoryScreen() {
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      {/* Parallel Class Selection Modal (remains the same) */}
+      {/* Parallel Class Selection Modal */}
        <Modal
           visible={parallelClassModalVisible}
           transparent={true}

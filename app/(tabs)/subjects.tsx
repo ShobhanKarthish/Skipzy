@@ -210,18 +210,8 @@ export default function SubjectsScreen() {
     );
   };
 
-  // Show loading state
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-        <View style={styles.loadingContainer}>
-          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
-          <Text style={styles.loadingText}>Loading subjects...</Text>
-        </View>
-      </View>
-    );
-  }
+  // Removed blocking loading state - show UI immediately for instant navigation
+  // Data will load in background and update when ready
 
   return (
     <View style={styles.container}>

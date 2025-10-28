@@ -27,7 +27,7 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
 
   // Load subjects from Supabase with simple caching
-  const loadSubjects = async (forceRefresh = false, year?: number, month?: number) => {
+  const loadSubjects = async (forceRefresh = false, year?: number, month?: number, showLoading = true) => {
     const now = Date.now();
     const CACHE_DURATION = 30000; // 30 seconds cache
     
@@ -40,7 +40,9 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
     
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       setError(null);
       const data = await subjectService.getSubjects(targetYear, targetMonth);
       setSubjects(data);
@@ -49,7 +51,9 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
       console.error('Error loading subjects:', err);
       setError('Failed to load subjects');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -64,7 +68,8 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        loadSubjects();
+        // Load in background without blocking UI
+        loadSubjects(false, undefined, undefined, false);
       } else if (event === 'SIGNED_OUT') {
         setSubjects([]);
         setError(null);
@@ -74,7 +79,8 @@ export const SubjectsProvider: React.FC<{ children: ReactNode }> = ({ children }
     const checkAuthAndLoad = async () => {
       const { data } = await authService.getSession();
       if (data?.session) {
-        loadSubjects();
+        // Load in background without showing loading state on initial mount
+        loadSubjects(false, undefined, undefined, false);
       }
     };
     

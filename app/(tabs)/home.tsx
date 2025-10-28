@@ -59,8 +59,11 @@ const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, u
         ? items.find(item => item.subject.id === preferredSubjectId) || items[0]
         : items[0];
       
+      // Build combined display name for UI
+      const combinedName = items.map(i => i.subject.name).join(' / ');
+      
       scheduleItems.push({
-        name: selectedItem.subject.name,
+        name: combinedName,
         time: selectedItem.entry.timeString,
         icon: selectedItem.subject.classType === 'Lecture' ? 'school-outline' : 
               selectedItem.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
@@ -255,18 +258,8 @@ const HomeScreen = () => {
     return totalSafe;
   };
 
-  // Show loading state
-  if (subjectsLoading || profileLoading) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-        <View style={styles.loadingContainer}>
-          <Ionicons name="hourglass-outline" size={48} color="#8b5cf6" />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </View>
-    );
-  }
+  // Removed blocking loading state - show UI immediately for better UX
+  // Data will load in background and update when ready
 
   const handleParallelClassSelection = (subjectId: string) => {
     // Find the selected subject
@@ -788,6 +781,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#ffffff',
+    flexShrink: 1, // Allow text to shrink and wrap if needed
   },
   parallelTag: {
     backgroundColor: 'rgba(139, 92, 246, 0.2)',

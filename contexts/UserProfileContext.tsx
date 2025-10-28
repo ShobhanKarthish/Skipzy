@@ -93,12 +93,13 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
         loadLocalPreferences()
       ]);
       
-      // Load user profile if signed in
+      // Set loaded immediately to unblock UI
+      setIsLoaded(true);
+      
+      // Load user profile in background if signed in
       if (sessionResult.data?.session) {
         loadUserProfile();
       }
-      
-      setIsLoaded(true);
     };
     
     initializeData();
