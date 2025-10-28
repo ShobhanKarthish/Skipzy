@@ -2,6 +2,7 @@ import { useSubjects } from '@/contexts/SubjectsContext';
 import { useUserProfile } from '@/contexts/UserProfileContext';
 import { authService } from '@/lib/supabaseService';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
   Animated,
@@ -23,6 +24,7 @@ interface EditForm {
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { subjects, refreshSubjects } = useSubjects();
   const {
     userProfile,
@@ -137,6 +139,8 @@ export default function ProfileScreen() {
         showToast('Failed to sign out', 'error');
       } else {
         showToast('Signed out successfully', 'success');
+        // Navigate to auth screen
+        router.replace('/auth');
       }
     } catch (error) {
       showToast('Failed to sign out', 'error');
@@ -171,6 +175,9 @@ export default function ProfileScreen() {
       await refreshSubjects();
       setResetModalVisible(false);
       showToast('All data has been reset', 'success');
+      // Sign out and navigate to auth screen
+      await authService.signOut();
+      router.replace('/auth');
     } catch (error) {
       setResetModalVisible(false);
       showToast('Failed to reset data', 'error');
