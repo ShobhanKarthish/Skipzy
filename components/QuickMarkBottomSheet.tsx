@@ -3,17 +3,17 @@ import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, // Import ActivityIndicator
-  Alert, // Import Alert
-  Animated,
-  Dimensions,
-  Modal,
-  PanResponder,
-  PanResponderGestureState, // Import type
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator, // Import ActivityIndicator
+    Alert, // Import Alert
+    Animated,
+    Dimensions,
+    Modal,
+    PanResponder,
+    PanResponderGestureState, // Import type
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -136,7 +136,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
       return;
     }
     setSaving(true);
-    const dateToMark = selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+    const dateToMark = selectedDate ? toLocalYMD(selectedDate) : toLocalYMD(new Date());
     let success = false;
     let message = '';
     let isError = false;
@@ -170,13 +170,21 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
     }
   };
 
+  // Helper: format local date to YYYY-MM-DD (timezone-safe)
+  const toLocalYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   // *** NEW: Handle Delete Function ***
   const handleDelete = () => {
     if (!subject || !selectedDate || !isEditing || deleting || saving) return;
 
     Alert.alert(
       "Clear Attendance",
-      `Remove attendance for ${subject.name} on ${selectedDate.toLocaleDateString()}?`,
+      `Remove attendance for ${subject.name} on ${toLocalYMD(selectedDate)}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -186,7 +194,7 @@ const QuickMarkBottomSheet: React.FC<QuickMarkBottomSheetProps> = ({
             setDeleting(true);
             let success = false;
             let message = '';
-            const dateStr = selectedDate.toISOString().split('T')[0];
+            const dateStr = toLocalYMD(selectedDate);
             try {
               success = await deleteAttendance(subject.id, dateStr);
               message = success ? 'Attendance cleared!' : 'Failed to clear';

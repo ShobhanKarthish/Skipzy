@@ -22,7 +22,7 @@ const ALL_ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 
 // *** REMOVE MarkAllModal Component and its styles ***
 
 export default function HistoryScreen() {
-  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth, addAttendance } = useSubjects();
+  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth, addAttendance, refreshSubjects } = useSubjects();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
@@ -90,6 +90,14 @@ export default function HistoryScreen() {
     return selectedYear === now.getFullYear() && selectedMonth === now.getMonth();
   };
 
+  // Local date formatter for YYYY-MM-DD (timezone-safe)
+  const toLocalYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   // Get calendar days for the selected month
   const getCalendarDays = () => {
     const firstDay = new Date(selectedYear, selectedMonth, 1);
@@ -124,7 +132,7 @@ export default function HistoryScreen() {
     const today = new Date();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(selectedYear, selectedMonth, day);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = toLocalYMD(date);
 
       // Count attendance records for this date
       let attendanceCount = 0;
@@ -265,7 +273,7 @@ export default function HistoryScreen() {
   const confirmAndMarkAll = (status: AttendanceStatus) => {
     if (!selectedDate || isMarkingAll) return;
 
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = toLocalYMD(selectedDate);
     const subjectsToMark = selectedDaySubjects.filter(subject =>
       !subject.history.some(h => h.date === dateStr) && !subject.isParallel
     );
@@ -357,7 +365,7 @@ export default function HistoryScreen() {
 
   const calendarDays = getCalendarDays();
   const monthlyStats = getMonthlyStats();
-  const selectedDateStr = selectedDate?.toISOString().split('T')[0];
+  const selectedDateStr = selectedDate ? toLocalYMD(selectedDate) : undefined;
   const selectedDaySubjects = selectedDate ? getSubjectsForDate(selectedDate) : [];
   const unmarkedSubjectsCount = selectedDaySubjects.filter(subject =>
     !subject.history.some(h => h.date === selectedDateStr) && !subject.isParallel
@@ -437,7 +445,7 @@ export default function HistoryScreen() {
                 {calendarDays.map((day, index) => {
                       let hasAbsence = false;
                     if (day.date) {
-                        const dateStr = day.date.toISOString().split('T')[0];
+                        const dateStr = toLocalYMD(day.date);
                         hasAbsence = subjects.some(subject =>
                             subject.history.some(h => h.date === dateStr && h.status === 'Absent')
                         );
@@ -449,7 +457,7 @@ export default function HistoryScreen() {
                                 styles.calendarDay,
                                 !day.isCurrentMonth && styles.calendarDayDisabled,
                                 day.isToday && styles.calendarDayToday,
-                                selectedDateStr === day.date?.toISOString().split('T')[0] && styles.calendarDaySelected,
+                                day.date && selectedDateStr === toLocalYMD(day.date) && styles.calendarDaySelected,
                             ]}
                             onPress={() => handleDatePress(day)}
                             activeOpacity={0.7}
@@ -461,7 +469,7 @@ export default function HistoryScreen() {
                                         styles.dayNumber,
                                         !day.isCurrentMonth && styles.dayNumberDisabled,
                                         day.isToday && styles.dayNumberToday,
-                                        selectedDateStr === day.date?.toISOString().split('T')[0] && styles.dayNumberSelected,
+                                        day.date && selectedDateStr === toLocalYMD(day.date) && styles.dayNumberSelected,
                                     ]}>
                                         {day.dateNumber}
                                     </Text>
@@ -711,8 +719,8 @@ export default function HistoryScreen() {
               setSelectedSubject(null);
               setEditingRecord(false);
           }}
-          // Pass showToast directly for success/error handling
-           onSuccess={(message) => showToast(message)}
+          // On success, refresh subjects so other tabs update immediately
+           onSuccess={(message) => { showToast(message); refreshSubjects(); }}
            onError={(message) => showToast(message)} // Show error using the same toast
       />
 

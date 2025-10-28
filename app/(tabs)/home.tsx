@@ -3,7 +3,8 @@ import { useSubjects } from '@/contexts/SubjectsContext';
 import { useUserProfile } from '@/contexts/UserProfileContext';
 import { AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -95,7 +96,7 @@ const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, u
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const HomeScreen = () => {
-  const { subjects, loading: subjectsLoading } = useSubjects();
+  const { subjects, loading: subjectsLoading, refreshSubjects } = useSubjects();
   const { userProfile, loading: profileLoading } = useUserProfile();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [progressAnim] = useState(new Animated.Value(0));
@@ -105,6 +106,15 @@ const HomeScreen = () => {
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
   const [selectedParallelClass, setSelectedParallelClass] = useState<any>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshSubjects();
+      setRefreshKey(prev => prev + 1);
+    }, [])
+  );
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -195,24 +205,32 @@ const HomeScreen = () => {
   };
 
   const handleScheduleItemPress = (item: any) => {
-    // Find subject by ID if available, otherwise by name
-    const subject = item.subjectId 
-      ? subjects.find(s => s.id === item.subjectId)
-      : subjects.find(s => 
-          s.name.toLowerCase().includes(item.name.toLowerCase()) || 
-          item.name.toLowerCase().includes(s.name.toLowerCase())
-        );
-    
-    if (subject) {
-      setSelectedSubject(subject);
-      setQuickMarkVisible(true);
+    // Check if this is a parallel class
+    if (item.isParallel && item.parallelOptions && item.parallelOptions.length > 1) {
+      // Show parallel class selection modal
+      setSelectedParallelClass(item);
+      setParallelClassModalVisible(true);
+    } else {
+      // Find subject by ID if available, otherwise by name
+      const subject = item.subjectId 
+        ? subjects.find(s => s.id === item.subjectId)
+        : subjects.find(s => 
+            s.name.toLowerCase().includes(item.name.toLowerCase()) || 
+            item.name.toLowerCase().includes(s.name.toLowerCase())
+          );
+      
+      if (subject) {
+        setSelectedSubject(subject);
+        setQuickMarkVisible(true);
+      }
     }
   };
 
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const schedule = getScheduleForDate(selectedDate);
-  const selectedDateKey = selectedDate.toDateString();
+  // Use local YYYY-MM-DD to match records and other screens
+  const selectedDateKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
 
   // Calculate total classes attended
   const totalClassesAttended = subjects.reduce((acc, subject) => {
@@ -253,9 +271,16 @@ const HomeScreen = () => {
     );
   }
 
-  function handleParallelClassSelection(subjectId: any): void {
-    throw new Error('Function not implemented.');
-  }
+  const handleParallelClassSelection = (subjectId: string) => {
+    // Find the selected subject
+    const subject = subjects.find(s => s.id === subjectId);
+    
+    if (subject) {
+      setSelectedSubject(subject);
+      setParallelClassModalVisible(false);
+      setQuickMarkVisible(true);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -404,10 +429,10 @@ const HomeScreen = () => {
                     );
                 
                 let isMarked = false;
+                let dateRecord: { status: 'Present'|'Absent'|'Holiday'|'OD' } | undefined;
                 if (subject) {
-                  isMarked = subject.history.some(
-                    record => new Date(record.date).toDateString() === selectedDateKey
-                  );
+                  dateRecord = subject.history.find(record => record.date === selectedDateKey);
+                  isMarked = !!dateRecord;
                 }
 
                 return (
@@ -422,7 +447,14 @@ const HomeScreen = () => {
                         <Ionicons name={item.icon as any} size={22} color="#8b5cf6" />
                       </View>
                       <View style={styles.scheduleContent}>
-                        <Text style={styles.scheduleName}>{item.name}</Text>
+                        <View style={styles.scheduleNameRow}>
+                          <Text style={styles.scheduleName}>{item.name}</Text>
+                          {item.isParallel && (
+                            <View style={styles.parallelTag}>
+                              <Text style={styles.parallelTagText}>Choice</Text>
+                            </View>
+                          )}
+                        </View>
                         <View style={styles.scheduleTimeContainer}>
                           <Ionicons name="time-outline" size={14} color="#6b7280" />
                           <Text style={styles.scheduleTime}>{item.time}</Text>
@@ -430,13 +462,23 @@ const HomeScreen = () => {
                       </View>
                     </View>
                     
-                    {/* Conditionally render Mark/Marked button */}
-                    {isMarked ? (
-                      <View style={[styles.markAttendanceBtn, styles.markAttendanceBtnMarked]}>
-                        <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                        <Text style={[styles.markAttendanceText, styles.markAttendanceTextMarked]}>Marked</Text>
-                      </View>
-                    ) : (
+                    {/* Conditionally render Mark or specific status badge */}
+                    {isMarked && dateRecord ? (() => {
+                      const status = dateRecord.status;
+                      const cfg = status === 'Present'
+                        ? { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981', color: '#10b981', icon: 'checkmark-circle' as const }
+                        : status === 'Absent'
+                          ? { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444', color: '#ef4444', icon: 'close-circle' as const }
+                          : status === 'OD'
+                            ? { bg: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b', color: '#f59e0b', icon: 'briefcase' as const }
+                            : { bg: 'rgba(59, 130, 246, 0.2)', border: '#3b82f6', color: '#3b82f6', icon: 'home' as const };
+                      return (
+                        <View style={[styles.markAttendanceBtn, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }] }>
+                          <Ionicons name={cfg.icon} size={20} color={cfg.color} />
+                          <Text style={[styles.markAttendanceText, { color: cfg.color }]}>{status}</Text>
+                        </View>
+                      );
+                    })() : (
                       <View style={styles.markAttendanceBtn}>
                         <Ionicons name="checkmark-circle-outline" size={20} color="#8b5cf6" />
                         <Text style={styles.markAttendanceText}>Mark</Text>
@@ -507,12 +549,15 @@ const HomeScreen = () => {
       <QuickMarkBottomSheet
         visible={quickMarkVisible}
         subject={selectedSubject}
+        selectedDate={selectedDate}
         onClose={() => {
           setQuickMarkVisible(false);
           setSelectedSubject(null);
         }}
         onSuccess={() => {
-          // Stats will automatically update from context
+          // Force refresh to show updated status immediately
+          refreshSubjects();
+          setRefreshKey(prev => prev + 1);
         }}
       />
     </View>
@@ -738,11 +783,30 @@ const styles = StyleSheet.create({
   scheduleContent: {
     flex: 1,
   },
+  scheduleNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
   scheduleName: {
     fontSize: 15,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 6,
+  },
+  parallelTag: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.4)',
+  },
+  parallelTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8b5cf6',
+    textTransform: 'uppercase',
   },
   scheduleTimeContainer: {
     flexDirection: 'row',
