@@ -1,4 +1,4 @@
-import { authService, userService } from '@/lib/supabaseService';
+import { attendanceService, authService, userService } from '@/lib/supabaseService';
 import { AppUserProfile } from '@/types/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
@@ -155,6 +155,13 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const resetAllData = async () => {
     try {
+      // Delete all attendance records from the database
+      const success = await attendanceService.deleteAllAttendanceRecords();
+      if (!success) {
+        throw new Error('Failed to delete attendance records');
+      }
+      
+      // Clear local storage preferences
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.DARK_MODE,
         STORAGE_KEYS.NOTIFICATIONS,

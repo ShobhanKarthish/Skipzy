@@ -1,9 +1,9 @@
 import {
-    AppAttendanceRecord,
-    AppSubject,
-    AppTimetableEntry,
-    AppUserProfile,
-    CreateAttendanceRecordData
+  AppAttendanceRecord,
+  AppSubject,
+  AppTimetableEntry,
+  AppUserProfile,
+  CreateAttendanceRecordData
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
@@ -458,6 +458,37 @@ export const attendanceService = {
     } catch (error) {
       console.error('Error in getAttendanceRecords:', error);
       return [];
+    }
+  },
+
+  // Delete all attendance records for the current user
+  async deleteAllAttendanceRecords(): Promise<boolean> {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) return false;
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', user.id)
+        .single();
+
+      if (userError || !userData) return false;
+
+      const { error } = await supabase
+        .from('attendance_records')
+        .delete()
+        .eq('user_id', userData.id);
+
+      if (error) {
+        console.error('Error deleting all attendance records:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in deleteAllAttendanceRecords:', error);
+      return false;
     }
   },
 };

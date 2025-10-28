@@ -23,7 +23,7 @@ interface EditForm {
 }
 
 export default function ProfileScreen() {
-  const { subjects } = useSubjects();
+  const { subjects, refreshSubjects } = useSubjects();
   const {
     userProfile,
     loading: profileLoading,
@@ -167,11 +167,13 @@ export default function ProfileScreen() {
   const onConfirmReset = async () => {
     try {
       await resetAllData();
+      // Refresh subjects to clear the attendance records from UI
+      await refreshSubjects();
       setResetModalVisible(false);
-      showToast('All data has been reset');
+      showToast('All data has been reset', 'success');
     } catch (error) {
       setResetModalVisible(false);
-      showToast('Failed to reset data');
+      showToast('Failed to reset data', 'error');
     }
   };
 
