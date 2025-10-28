@@ -4,17 +4,17 @@ import { authService } from '@/lib/supabaseService';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
-  Animated,
-  Modal,
-  ScrollView,
-  Share,
-  StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Animated,
+    Modal,
+    ScrollView,
+    Share,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -75,18 +75,25 @@ export default function ProfileScreen() {
 
   // Calculate last 6 months attendance from real data
   const calculateMonthlyAttendance = () => {
-    const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
-    const monthlyData = months.map(month => {
-      // Calculate actual attendance for each month from subjects data
+    const now = new Date();
+    const monthlyData = [];
+    
+    // Generate last 6 months dynamically
+    for (let i = 5; i >= 0; i--) {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthShort = targetDate.toLocaleDateString('en-US', { month: 'short' });
+      const year = targetDate.getFullYear();
+      const month = targetDate.getMonth();
+      
+      // Calculate actual attendance for this month from subjects data
       let totalAttended = 0;
       let totalClasses = 0;
       
       subjects.forEach(subject => {
         subject.history.forEach(record => {
           const recordDate = new Date(record.date);
-          const recordMonth = recordDate.toLocaleDateString('en-US', { month: 'short' });
           
-          if (recordMonth === month) {
+          if (recordDate.getFullYear() === year && recordDate.getMonth() === month) {
             if (record.status === 'Present' || record.status === 'OD') {
               totalAttended++;
             }
@@ -98,8 +105,9 @@ export default function ProfileScreen() {
       });
       
       const percentage = totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 100) : 0;
-      return { month, percentage };
-    });
+      monthlyData.push({ month: monthShort, percentage });
+    }
+    
     return monthlyData;
   };
 

@@ -14,7 +14,22 @@ import {
 import Svg, { Circle } from 'react-native-svg';
 
 export default function SubjectsScreen() {
-  const { subjects, loading, error, selectedYear, selectedMonth } = useSubjects();
+  const { subjects: allSubjects, loading, error } = useSubjects();
+
+  // Local month state for filtering display only
+  const [selectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth] = useState<number>(new Date().getMonth());
+
+  // Filter subjects to only show attendance records for the selected month
+  const subjects = useMemo(() => {
+    return allSubjects.map(subject => ({
+      ...subject,
+      history: subject.history.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate.getFullYear() === selectedYear && recordDate.getMonth() === selectedMonth;
+      })
+    }));
+  }, [allSubjects, selectedYear, selectedMonth]);
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);

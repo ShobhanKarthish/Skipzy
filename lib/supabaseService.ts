@@ -1,9 +1,9 @@
 import {
-  AppAttendanceRecord,
-  AppSubject,
-  AppTimetableEntry,
-  AppUserProfile,
-  CreateAttendanceRecordData
+    AppAttendanceRecord,
+    AppSubject,
+    AppTimetableEntry,
+    AppUserProfile,
+    CreateAttendanceRecordData
 } from '@/types/supabase';
 import { supabase } from './supabase';
 
@@ -150,8 +150,8 @@ export const userService = {
 
 // Subject operations
 export const subjectService = {
-  // Get all subjects with timetable slots and attendance records for a specific month
-  async getSubjects(year?: number, month?: number): Promise<AppSubject[]> {
+  // Get all subjects with timetable slots and all attendance records
+  async getSubjects(): Promise<AppSubject[]> {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) return [];
@@ -210,14 +210,9 @@ export const subjectService = {
       }
 
       const subjectIds = subjects.map(s => s.id);
-      
-      // Use provided year/month or default to current month
-      const now = new Date();
-      const targetYear = year ?? now.getFullYear();
-      const targetMonth = month ?? now.getMonth();
-      const monthRange = getMonthRange(targetYear, targetMonth);
 
       // Execute timetable slots and attendance records queries in parallel
+      // Fetch ALL attendance records without month filtering
       const [timetableSlotsResult, attendanceRecordsResult] = await Promise.all([
         supabase
           .from('timetable_slots')
@@ -228,8 +223,6 @@ export const subjectService = {
           .select('subject_id, date, status, notes')
           .eq('user_id', userData.id)
           .in('subject_id', subjectIds)
-          .gte('date', monthRange.start)
-          .lte('date', monthRange.end)
           .order('date', { ascending: false })
       ]);
 

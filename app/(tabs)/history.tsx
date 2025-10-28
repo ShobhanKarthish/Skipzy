@@ -2,18 +2,18 @@ import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert, // Keep Alert
-  Animated,
-  Modal, // Keep Modal for Parallel Class selection
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert, // Keep Alert
+    Animated,
+    Modal, // Keep Modal for Parallel Class selection
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
@@ -22,7 +22,12 @@ const ALL_ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 
 // *** REMOVE MarkAllModal Component and its styles ***
 
 export default function HistoryScreen() {
-  const { subjects, loading, error, selectedYear, selectedMonth, setSelectedMonth, addAttendance, refreshSubjects } = useSubjects();
+  const { subjects: allSubjects, loading, error, addAttendance, refreshSubjects } = useSubjects();
+  
+  // Local month state for filtering display only
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
@@ -35,26 +40,16 @@ export default function HistoryScreen() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(-100)).current;
 
-  // --- Functions (getMonthName, navigateMonth, isCurrentMonth, getCalendarDays, getSubjectsForDate, handleParallelClassSelection, handleDatePress, getMonthlyStats, showToast) remain the same ---
-     const showToast = (message: string) => {
-    setToastMessage(message);
-    Animated.timing(toastAnim, {
-      toValue: 50, // Adjusted position
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      Animated.timing(toastAnim, {
-        toValue: -100,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
-        setToastMessage(null);
-      });
-    }, 2000); // Duration toast is visible
-  };
-
+  // Filter subjects to only show attendance records for the selected month
+  const subjects = useMemo(() => {
+    return allSubjects.map(subject => ({
+      ...subject,
+      history: subject.history.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate.getFullYear() === selectedYear && recordDate.getMonth() === selectedMonth;
+      })
+    }));
+  }, [allSubjects, selectedYear, selectedMonth]);
 
   // Get month name
   const getMonthName = (year: number, month: number) => {
@@ -81,7 +76,8 @@ export default function HistoryScreen() {
       }
     }
 
-    setSelectedMonth(newYear, newMonth);
+    setSelectedYear(newYear);
+    setSelectedMonth(newMonth);
   };
 
   // Check if we're viewing current month
