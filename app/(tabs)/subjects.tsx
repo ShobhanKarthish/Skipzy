@@ -1,24 +1,20 @@
-import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    Easing,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Easing,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 export default function SubjectsScreen() {
   const { subjects, loading, error, selectedYear, selectedMonth } = useSubjects();
-  const [quickMarkVisible, setQuickMarkVisible] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -86,11 +82,30 @@ export default function SubjectsScreen() {
     return { text: '#10b981', ring: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
   };
 
+  // Sort subjects: below 75% first, then 75% and above
+  const sortedSubjects = useMemo(() => {
+    return [...subjects].sort((a, b) => {
+      const { attended: attendedA, total: totalA } = getStats(a.history);
+      const { attended: attendedB, total: totalB } = getStats(b.history);
+      const percentageA = totalA > 0 ? Math.round((attendedA / totalA) * 100) : 0;
+      const percentageB = totalB > 0 ? Math.round((attendedB / totalB) * 100) : 0;
 
-  const handleQuickMark = (subject: AppSubject) => {
-    setSelectedSubject(subject);
-    setQuickMarkVisible(true);
-  };
+      // Group by below/above 75%
+      const groupA = percentageA < 75 ? 0 : 1;
+      const groupB = percentageB < 75 ? 0 : 1;
+
+      if (groupA !== groupB) {
+        return groupA - groupB; // Below 75% comes first
+      }
+
+      // Within same group, sort by percentage (ascending for below 75%, descending for above)
+      if (groupA === 0) {
+        return percentageA - percentageB; // Lower percentages first in "Needs Attention"
+      } else {
+        return percentageB - percentageA; // Higher percentages first in "Good Standing"
+      }
+    });
+  }, [subjects]);
 
   const renderSubjectCard = (subject: AppSubject) => {
     const { attended, total } = getStats(subject.history);
@@ -191,16 +206,6 @@ export default function SubjectsScreen() {
           {/* --- END REMOVED SCHEDULE SECTION --- */}
 
         </View>
-
-        {/* Quick Mark Button - Full Width */}
-        <TouchableOpacity
-          style={styles.quickMarkBtnFull}
-          onPress={() => handleQuickMark(subject)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-          <Text style={styles.quickMarkText}>Quick Mark</Text>
-        </TouchableOpacity>
       </View>
     );
   };
@@ -272,26 +277,66 @@ export default function SubjectsScreen() {
             </Text>
           </View>
         ) : (
-          subjects.map(renderSubjectCard)
+          <>
+            {/* Render subjects below 75% */}
+            {sortedSubjects.filter(subject => {
+              const { attended, total } = getStats(subject.history);
+              const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+              return percentage < 75;
+            }).length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="alert-circle" size={20} color="#ef4444" />
+                  <Text style={styles.sectionTitle}>Needs Attention</Text>
+                  <Text style={styles.sectionBadge}>
+                    {sortedSubjects.filter(subject => {
+                      const { attended, total } = getStats(subject.history);
+                      const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+                      return percentage < 75;
+                    }).length}
+                  </Text>
+                </View>
+                {sortedSubjects
+                  .filter(subject => {
+                    const { attended, total } = getStats(subject.history);
+                    const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+                    return percentage < 75;
+                  })
+                  .map(renderSubjectCard)}
+              </>
+            )}
+
+            {/* Render subjects at or above 75% */}
+            {sortedSubjects.filter(subject => {
+              const { attended, total } = getStats(subject.history);
+              const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+              return percentage >= 75;
+            }).length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                  <Text style={styles.sectionTitle}>Good Standing</Text>
+                  <Text style={styles.sectionBadge}>
+                    {sortedSubjects.filter(subject => {
+                      const { attended, total } = getStats(subject.history);
+                      const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+                      return percentage >= 75;
+                    }).length}
+                  </Text>
+                </View>
+                {sortedSubjects
+                  .filter(subject => {
+                    const { attended, total } = getStats(subject.history);
+                    const percentage = total > 0 ? Math.round((attended / total) * 100) : 0;
+                    return percentage >= 75;
+                  })
+                  .map(renderSubjectCard)}
+              </>
+            )}
+          </>
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
-
-      {/* Quick Mark Bottom Sheet */}
-      <QuickMarkBottomSheet
-        visible={quickMarkVisible}
-        subject={selectedSubject}
-        onClose={() => {
-          setQuickMarkVisible(false);
-          setSelectedSubject(null);
-        }}
-        onSuccess={() => {
-          showToast('Attendance marked successfully!', 'success');
-        }}
-         onError={(message) => { // Handle potential errors from bottom sheet
-          showToast(message || 'Failed to mark attendance', 'error');
-        }}
-      />
     </View>
   );
 }
@@ -439,20 +484,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
-  // --- REMOVED scheduleSection, scheduleHeader, scheduleTitle, scheduleEntry, scheduleDay, scheduleTime, scheduleText styles ---
-  quickMarkBtnFull: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#8b5cf6',
-    padding: 14,
-    // Removed border radius here as it's handled by overflow:hidden on parent
+    marginBottom: 12,
+    marginTop: 8,
   },
-  quickMarkText: {
-    color: '#ffffff',
-    fontSize: 15,
+  sectionTitle: {
+    fontSize: 16,
     fontWeight: '700',
+    color: '#ffffff',
+    flex: 1,
+  },
+  sectionBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6b7280',
+    backgroundColor: '#262626',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   bottomPadding: {
     height: 100, // Keep padding for scroll area below tabs
