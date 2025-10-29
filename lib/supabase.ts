@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
 // Get Supabase credentials from environment variables
@@ -23,9 +24,10 @@ if (supabaseUrl && !supabaseUrl.startsWith('https://')) {
   );
 }
 
-// Export the Supabase client as a singleton with better error handling
+// Export the Supabase client with AsyncStorage for session persistence
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    storage: AsyncStorage, // Enable session persistence
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
