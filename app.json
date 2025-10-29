@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Skipzy",
+    "name": "skipzy",
     "slug": "skipzy",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,17 +9,16 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
-      "icon": "./assets/images/icon.png"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#E6F4FE"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
       },
-      "package": "com.shobhan25.skipzy",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.shobhan25.skipzy"
     },
     "web": {
       "output": "static",
@@ -30,13 +29,9 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#0D0D0D",
-          "dark": {
-            "backgroundColor": "#0D0D0D"
-          }
+          "backgroundColor": "#FFFFFF"
         }
       ]
     ],
