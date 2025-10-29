@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "skipzy",
+    "name": "Skipzy",
     "slug": "skipzy",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,15 +9,15 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#E6F4FE"
       },
+      "package": "com.shobhan25.skipzy",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -43,6 +43,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ba1746cf-7e3a-48d1-bf39-6fcc13cef1ce"
+      }
+    },
+    "owner": "shobhan25"
   }
 }
