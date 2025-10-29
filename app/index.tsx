@@ -1,21 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { authService } from '@/lib/supabaseService';
+import { supabase } from '@/lib/supabase';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 export default function Index() {
   const router = useRouter();
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    // Use a fast synchronous check first
     checkAuthAndRedirect();
   }, []);
 
   const checkAuthAndRedirect = async () => {
     try {
-      const { data } = await authService.getSession();
+      // Quick session check - don't wait for network
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (data?.session) {
-        // User is authenticated, redirect to home
+      if (session) {
+        // User is authenticated, redirect to home immediately
         router.replace('/(tabs)/home');
       } else {
         // No session, redirect to auth
@@ -25,10 +28,16 @@ export default function Index() {
       console.error('Error checking auth state:', error);
       // On error, redirect to auth screen
       router.replace('/auth');
+    } finally {
+      setIsChecking(false);
     }
   };
 
-  // Show loading indicator while checking auth
+  // Minimal loading screen
+  if (!isChecking) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color="#8b5cf6" />
