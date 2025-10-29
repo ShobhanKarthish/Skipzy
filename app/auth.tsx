@@ -15,7 +15,7 @@ import AuthButton from '../components/ui/AuthButton';
 import AuthSwitchLink from '../components/ui/AuthSwitchLink';
 import FormInput from '../components/ui/FormInput';
 import PasswordInput from '../components/ui/PasswordInput';
-import Toast from '../components/ui/Toast';
+import Toast from '../components/ui/Toast'; // Uses the standalone Toast
 
 interface FormErrors {
   email?: string;
@@ -32,22 +32,23 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
 
-  // Toast state
+  // Toast state for this screen
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [toastVisible, setToastVisible] = useState(false);
 
-  // Toast function
+  // Toast function for this screen
   const showToast = (message: string, type: 'success' | 'error') => {
     setToastMessage(message);
     setToastType(type);
     setToastVisible(true);
   };
 
-  // Hide toast callback
+  // Hide toast callback for this screen
   const handleToastHide = () => {
     setToastVisible(false);
-    setToastMessage(null);
+    // Optional: Clear message after hide animation in Toast.tsx completes
+    // setToastMessage(null);
   };
 
   // FormValidation
@@ -77,20 +78,20 @@ export default function AuthScreen() {
       if (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to sign in';
         showToast(errorMessage, 'error');
-        return;
+        // setLoading(false); // Ensure loading stops on error - moved to finally
+        return; // Stop execution on error
       }
-      
-      // Navigate immediately for better UX
+
+      // Navigate immediately after successful sign-in attempt
       router.replace('/home' as Href);
-      showToast('Welcome back!', 'success');
-      if (data) {
-        console.log('Signed in user:', data.user);
-      }
+      // Optional: Show welcome message, though instant navigation might be better UX
+      // showToast('Welcome back!', 'success');
+
     } catch (err) {
       console.error('Sign in error:', err);
       showToast('An error occurred. Please try again.', 'error');
     } finally {
-      setLoading(false);
+       setLoading(false); // Ensure loading stops in all cases
     }
   };
 
@@ -102,21 +103,25 @@ export default function AuthScreen() {
 
       if (error) {
         showToast(error.message, 'error');
-        return;
+        // setLoading(false); // Ensure loading stops on error - moved to finally
+        return; // Stop execution on error
       }
-      
-      // Navigate immediately for better UX
+
+      // Navigate immediately after successful sign-up attempt
       router.replace('/home' as Href);
-      showToast('Account created! Check your email to confirm.', 'success');
+      // Optional: Show confirmation message, perhaps guide user to check email
+      // showToast('Account created! Check your email to confirm.', 'success');
+
+      // Clear form fields after successful signup attempt
       setName('');
       setEmail('');
       setPassword('');
-      console.log('Signed up user:', data.user);
+
     } catch (err) {
       console.error('Sign up error:', err);
       showToast('An error occurred. Please try again.', 'error');
     } finally {
-      setLoading(false);
+       setLoading(false); // Ensure loading stops in all cases
     }
   };
 
@@ -126,14 +131,15 @@ export default function AuthScreen() {
   };
 
   const getTitle = () => {
-    if (mode === 'signin') return { main: 'Welcome Back!', sub: "Oh, you're back? Makes sense" };
-    return { main: 'Welcome to SKIPZY', sub: 'Attendance matters, but so do you' };
+    if (mode === 'signin') return { main: 'Welcome Back!', sub: "Sign in to continue" }; // Updated sub
+    return { main: 'Create Account', sub: 'Start tracking your attendance' }; // Updated titles
   };
 
   const title = getTitle();
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Toast component instance for this screen */}
       <Toast
         message={toastMessage}
         type={toastType}
@@ -144,8 +150,8 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
-              source={require('../assets/images/icon.png')} 
+            <Image
+              source={require('../assets/images/icon.png')}
               style={styles.logoImage}
             />
           </View>
@@ -161,7 +167,6 @@ export default function AuthScreen() {
                 onChangeText={setName}
                 autoCapitalize="words"
                 error={errors.name}
-                style={styles.input}
               />
             )}
 
@@ -173,7 +178,6 @@ export default function AuthScreen() {
               autoCapitalize="none"
               autoComplete="email"
               error={errors.email}
-              style={styles.input}
             />
 
             <PasswordInput
@@ -181,7 +185,6 @@ export default function AuthScreen() {
               value={password}
               onChangeText={setPassword}
               error={errors.password}
-              style={styles.input}
             />
 
             <AuthButton
@@ -189,63 +192,68 @@ export default function AuthScreen() {
               title={mode === 'signin' ? 'Sign In' : 'Sign Up'}
               loading={loading}
               disabled={loading}
-              style={styles.button}
             />
 
             <AuthSwitchLink
               mode={mode}
               onSwitch={(target) => {
                 setMode(target);
-                setErrors({});
+                setErrors({}); // Clear errors on mode switch
               }}
             />
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </ScrollView> 
+    </KeyboardAvoidingView> 
   );
-}
+} // <-- Corrected potential extra character issue here
 
+// --- Styles (kept as provided previously) ---
 const styles = StyleSheet.create<Record<string, any>>({
-  container: { flex: 1, backgroundColor: '#000' },
-  scrollContent: { flexGrow: 1, justifyContent: 'space-between', padding: 32 },
-  content: { flex: 1, justifyContent: 'center', maxWidth: 448, width: '100%', alignSelf: 'center' },
-  logoContainer: { alignItems: 'center', marginBottom: 32 },
-  logoImage: { width: 120, height: 120, borderRadius: 24 },
-  mainTitle: { fontSize: 30, fontWeight: 'bold', textAlign: 'center', marginBottom: 8, color: '#fff' },
-  subtitle: { color: '#999', textAlign: 'center', marginBottom: 48, fontSize: 14 },
+  container: { flex: 1, backgroundColor: '#0a0a0a' }, // Dark background
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 32 }, // Centered content
+  content: { flex: 1, justifyContent: 'center', maxWidth: 400, width: '100%', alignSelf: 'center' }, // Max width for larger screens
+  logoContainer: { alignItems: 'center', marginBottom: 40 }, // Increased margin
+  logoImage: { width: 100, height: 100, borderRadius: 20 }, // Slightly smaller logo, rounded corners
+  mainTitle: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 8, color: '#ffffff' },
+  subtitle: { color: '#9ca3af', textAlign: 'center', marginBottom: 40, fontSize: 16 }, // Lighter subtitle
   form: { width: '100%' },
+  // Input styles are now handled inside FormInput and PasswordInput, but kept here for reference if needed elsewhere
   inputWrapper: { marginBottom: 32 },
   input: {
     backgroundColor: 'transparent',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(153,153,153,0.3)',
-    color: '#fff',
-    paddingBottom: 8,
+    borderBottomColor: 'rgba(153, 153, 153, 0.3)', // #999 with opacity
+    color: '#ffffff', // White text
+    paddingBottom: 12, // More padding
     fontSize: 16,
   },
+  // PasswordInput styles are internal now
   passwordContainer: { position: 'relative' },
   passwordInput: { paddingRight: 40 },
   eyeIcon: { position: 'absolute', right: 0, top: 0, padding: 4 },
   errorText: { color: '#ef4444', fontSize: 12, marginTop: 8 },
-  forgotPassword: { alignSelf: 'flex-end', marginBottom: 32, marginTop: -16 },
-  forgotPasswordText: { color: '#8b5cf6', fontSize: 14 },
+  // AuthButton styles are internal now
   button: {
-    backgroundColor: '#8b5cf6',
+    backgroundColor: '#8b5cf6', // Purple button
     height: 56,
-    borderRadius: 16,
+    borderRadius: 16, // More rounded
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    // Removed shadow for flatter design, uncomment if needed
+    // shadowColor: '#000',
+    // shadowOffset: { width: 0, height: 4 },
+    // shadowOpacity: 0.3,
+    // shadowRadius: 8,
+    // elevation: 8,
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  switchText: { textAlign: 'center', color: '#999', fontSize: 14 },
-  switchLink: { color: '#8b5cf6', fontWeight: '500' },
+  buttonDisabled: { opacity: 0.6 }, // More noticeable disabled state
+  buttonText: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
+  // AuthSwitchLink styles are internal now
+  switchText: { textAlign: 'center', color: '#9ca3af', fontSize: 14 },
+  switchLink: { color: '#8b5cf6', fontWeight: '600' }, // Bold link
+  // Optional Forgot Password styles
+  forgotPassword: { alignSelf: 'flex-end', marginBottom: 24, marginTop: -16 },
+  forgotPasswordText: { color: '#8b5cf6', fontSize: 14, fontWeight: '600'},
 });
-

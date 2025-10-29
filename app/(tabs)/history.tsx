@@ -2,12 +2,12 @@ import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { AppAttendanceRecord, AppSubject } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react'; // Added useEffect
 import {
   ActivityIndicator,
-  Alert, // Keep Alert
+  Alert,
   Animated,
-  Modal, // Keep Modal for Parallel Class selection
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -19,21 +19,57 @@ import {
 type AttendanceStatus = 'Present' | 'Absent' | 'OD' | 'Holiday';
 const ALL_ATTENDANCE_STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'OD', 'Holiday'];
 
-// *** REMOVE MarkAllModal Component and its styles ***
-
 export default function HistoryScreen() {
-  const { subjects: allSubjects, loading, error, addAttendance, refreshSubjects, selectedYear, selectedMonth, setMonthFilter } = useSubjects();  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const { subjects: allSubjects, loading, error, addAttendance, refreshSubjects, selectedYear, selectedMonth, setMonthFilter } = useSubjects();
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [editingRecord, setEditingRecord] = useState<boolean>(false);
   const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
   const [selectedParallelClasses, setSelectedParallelClasses] = useState<any[]>([]);
 
-  // *** Remove markAllModalVisible state ***
   const [isMarkingAll, setIsMarkingAll] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // --- Start: Added Toast Logic ---
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const toastAnim = useRef(new Animated.Value(-100)).current;
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimeout.current) {
+      clearTimeout(toastTimeout.current);
+    }
+
+    setToastMessage(message);
+    setToastType(type);
+
+    Animated.timing(toastAnim, {
+      toValue: 60, // Position below status bar
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    toastTimeout.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: -100,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setToastMessage(null);
+      });
+    }, 3000);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeout.current) {
+        clearTimeout(toastTimeout.current);
+      }
+    };
+  }, []);
+  // --- End: Added Toast Logic ---
 
   // Filter subjects to only show attendance records for the selected month
   const subjects = useMemo(() => {
@@ -105,7 +141,6 @@ export default function HistoryScreen() {
     }> = [];
 
     // Add empty slots for days before month starts
-    // Adjust startingDayOfWeek based on Mon-Sun week start preference if needed
     let displayStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek -1; // Make Monday index 0
     for (let i = 0; i < displayStartingDay; i++) {
         days.push({
@@ -223,11 +258,9 @@ export default function HistoryScreen() {
     const daySubjects = getSubjectsForDate(day.date);
 
     if (daySubjects.length === 0) {
-      showToast('No classes scheduled for this day');
+      showToast('No classes scheduled for this day', 'error'); // Use error type for info message
       return;
     }
-
-    // Note: Removed automatic selection if only one subject to allow Mark All
   };
 
 
@@ -236,11 +269,9 @@ export default function HistoryScreen() {
     let totalRecords = 0;
     let presentCount = 0;
     let absentCount = 0;
-    let odCount = 0; // Added OD count
 
     subjects.forEach(subject => {
         subject.history.forEach(h => {
-            // Only count Present, Absent, OD for percentage calculation
             if (h.status === 'Present' || h.status === 'Absent' || h.status === 'OD') {
                 totalRecords++;
             }
@@ -250,16 +281,13 @@ export default function HistoryScreen() {
             if (h.status === 'Absent') {
                 absentCount++;
             }
-            // odCount is included in presentCount for percentage, but tracked separately if needed elsewhere
         });
     });
 
     const percentage = totalRecords > 0 ? Math.round((presentCount / totalRecords) * 100) : 0;
-    // Return totalRecords based on Present/Absent/OD for percentage denominator
     return { totalRecords: totalRecords, presentCount, absentCount, percentage };
   };
 
-  // *** REVISED: Confirmation and Mark All Logic using Alert.alert ***
   const confirmAndMarkAll = (status: AttendanceStatus) => {
     if (!selectedDate || isMarkingAll) return;
 
@@ -270,12 +298,10 @@ export default function HistoryScreen() {
      const count = subjectsToMark.length;
 
     if (count === 0) {
-      // This case should ideally be handled by disabling the button, but added as safety
-      showToast('All eligible classes already marked.');
+      showToast('All eligible classes already marked.', 'success');
       return;
     }
 
-    // Final Confirmation Alert
     Alert.alert(
       "Confirm Mark All",
       `Mark all ${count} unmarked classes as "${status}" for this day?`,
@@ -283,7 +309,7 @@ export default function HistoryScreen() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Confirm",
-          style: "default", // Or "destructive" if marking as Absent
+          style: status === 'Absent' ? 'destructive' : 'default',
           onPress: async () => {
               setIsMarkingAll(true);
               let successCount = 0;
@@ -297,8 +323,7 @@ export default function HistoryScreen() {
                         status: status,
                         notes: null,
                       };
-                       // Add final check before adding
-                       const subjectData = subjects.find(s => s.id === subject.id); // Get latest subject data
+                       const subjectData = subjects.find(s => s.id === subject.id);
                        const alreadyExists = subjectData?.history.some(h => h.date === dateStr);
                        if (!alreadyExists) {
                            const success = await addAttendance(subject.id, record);
@@ -311,15 +336,14 @@ export default function HistoryScreen() {
                   );
               } catch (err) {
                    console.error("Error during bulk mark:", err);
-                   errorCount = count - successCount; // Assume remaining failed
+                   errorCount = count - successCount;
               } finally {
                   setIsMarkingAll(false);
                   if (errorCount > 0) {
-                    showToast(`Marked ${successCount}. Failed for ${errorCount}.`);
+                    showToast(`Marked ${successCount}. Failed for ${errorCount}.`, 'error');
                   } else if (successCount > 0) {
-                    showToast(`Marked ${successCount} classes as ${status}.`);
+                    showToast(`Marked ${successCount} classes as ${status}.`, 'success');
                   }
-                   // No else needed as the initial check covers the '0 to mark' case
               }
             }
         }
@@ -327,20 +351,18 @@ export default function HistoryScreen() {
     );
   };
 
-   // New function to show status options via Alert
    const showMarkAllStatusOptions = () => {
        if (!selectedDate || isMarkingAll || unmarkedSubjectsCount === 0) return;
 
        const options = ALL_ATTENDANCE_STATUSES.map(status => ({
            text: status,
            onPress: () => confirmAndMarkAll(status),
-           // Optionally add style: 'destructive' for 'Absent'
            style: status === 'Absent' ? 'destructive' : 'default' as 'default' | 'cancel' | 'destructive' | undefined
        }));
 
        Alert.alert(
-           `Mark All Unmarked (${unmarkedSubjectsCount})`, // Title
-           "Choose a status to apply:", // Message
+           `Mark All Unmarked (${unmarkedSubjectsCount})`,
+           "Choose a status to apply:",
            [
                ...options,
                {
@@ -348,7 +370,7 @@ export default function HistoryScreen() {
                    style: "cancel",
                },
            ],
-           { cancelable: true } // Allow dismissing by tapping outside
+           { cancelable: true }
        );
    };
 
@@ -358,21 +380,28 @@ export default function HistoryScreen() {
   const selectedDateStr = selectedDate ? toLocalYMD(selectedDate) : undefined;
   const selectedDaySubjects = selectedDate ? getSubjectsForDate(selectedDate) : [];
   const unmarkedSubjectsCount = selectedDaySubjects.filter(subject =>
-    !subject.history.some(h => h.date === selectedDateStr) && !subject.isParallel
+    selectedDateStr && !subject.history.some(h => h.date === selectedDateStr) && !subject.isParallel
   ).length;
 
-  // --- JSX Rendering ---
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
 
       {/* Toast */}
-      {toastMessage && (
-        <Animated.View style={[styles.toastContainer, { transform: [{ translateY: toastAnim }] }]}>
-          <Ionicons name="information-circle-outline" size={22} color="#ffffff" />
-          <Text style={styles.toastText}>{toastMessage}</Text>
-        </Animated.View>
-      )}
+      {/* Moved toast rendering here */}
+      <Animated.View style={[
+        styles.toastContainer,
+        { transform: [{ translateY: toastAnim }] },
+        toastType === 'error' ? styles.toastError : styles.toastSuccess
+      ]}>
+        <Ionicons
+          name={toastType === 'error' ? 'alert-circle-outline' : 'information-circle-outline'}
+          size={22}
+          color="#ffffff"
+        />
+        {/* Render toastMessage only if it's not null */}
+        {toastMessage && <Text style={styles.toastText}>{toastMessage}</Text>}
+      </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
@@ -480,11 +509,11 @@ export default function HistoryScreen() {
                   {selectedDaySubjects.length} {selectedDaySubjects.length === 1 ? 'class' : 'classes'} scheduled
                 </Text>
               </View>
-              {/* Mark All Button - Now triggers status options alert */}
+              {/* Mark All Button */}
               {selectedDaySubjects.length > 0 && unmarkedSubjectsCount > 0 && (
                 <TouchableOpacity
                   style={styles.markAllButton}
-                  onPress={showMarkAllStatusOptions} // Changed onPress handler
+                  onPress={showMarkAllStatusOptions}
                   disabled={isMarkingAll}
                   activeOpacity={0.7}
                 >
@@ -541,25 +570,25 @@ export default function HistoryScreen() {
                         <View style={styles.classLeft}>
                           <View style={[
                             styles.classIcon,
-                            isMarked && {
+                            isMarked && dateRecord && { // Ensure dateRecord exists before accessing status
                               backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                 ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)'
+                                : 'rgba(59, 130, 246, 0.2)' // Holiday or other
                             }
                           ]}>
                             <Ionicons
                               name={subject.classType === 'Lecture' ? 'school-outline' : subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline'}
                               size={20}
                               color={
-                                isMarked
+                                isMarked && dateRecord // Ensure dateRecord exists
                                   ? (dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                       ? '#10b981'
                                       : dateRecord.status === 'Absent'
                                       ? '#ef4444'
-                                      : '#3b82f6')
-                                  : '#8b5cf6'
+                                      : '#3b82f6') // Holiday or other
+                                  : '#8b5cf6' // Default color if not marked
                               }
                             />
                           </View>
@@ -585,18 +614,18 @@ export default function HistoryScreen() {
                           </View>
                         </View>
                         <View style={styles.classRight}>
-                          {isMarked ? (
+                          {isMarked && dateRecord ? ( // Ensure dateRecord exists
                             <View style={[styles.statusBadge, {
                               backgroundColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                 ? 'rgba(16, 185, 129, 0.2)'
                                 : dateRecord.status === 'Absent'
                                 ? 'rgba(239, 68, 68, 0.2)'
-                                : 'rgba(59, 130, 246, 0.2)',
+                                : 'rgba(59, 130, 246, 0.2)', // Holiday or other
                               borderColor: dateRecord.status === 'Present' || dateRecord.status === 'OD'
                                 ? '#10b981'
                                 : dateRecord.status === 'Absent'
                                 ? '#ef4444'
-                                : '#3b82f6'
+                                : '#3b82f6' // Holiday or other
                             }]}>
                               <Ionicons
                                 name={
@@ -611,7 +640,7 @@ export default function HistoryScreen() {
                                     ? '#10b981'
                                     : dateRecord.status === 'Absent'
                                     ? '#ef4444'
-                                    : '#3b82f6'
+                                    : '#3b82f6' // Holiday or other
                                 }
                               />
                               <Text style={[styles.statusText, {
@@ -619,7 +648,7 @@ export default function HistoryScreen() {
                                   ? '#10b981'
                                   : dateRecord.status === 'Absent'
                                   ? '#ef4444'
-                                  : '#3b82f6'
+                                  : '#3b82f6' // Holiday or other
                               }]}>
                                 {dateRecord.status}
                               </Text>
@@ -663,7 +692,7 @@ export default function HistoryScreen() {
                       <TouchableOpacity
                           key={index}
                           style={styles.parallelOption}
-                          onPress={() => handleParallelClassSelection(option.subject)}
+                          onPress={() => handleParallelClassSelection(option.subject)} // Pass the whole subject
                           activeOpacity={0.7}
                       >
                           <View style={styles.parallelOptionLeft}>
@@ -681,7 +710,7 @@ export default function HistoryScreen() {
                   ))}
 
                   <TouchableOpacity
-                      style={styles.modalCancelBtn} // Reuse style
+                      style={styles.modalCancelBtn}
                       onPress={() => setParallelClassModalVisible(false)}
                       activeOpacity={0.7}
                   >
@@ -702,450 +731,454 @@ export default function HistoryScreen() {
               setSelectedSubject(null);
               setEditingRecord(false);
           }}
-          // On success, refresh subjects so other tabs update immediately
-           onSuccess={(message) => { showToast(message); refreshSubjects(); }}
-           onError={(message) => showToast(message)} // Show error using the same toast
+           onSuccess={(message) => { showToast(message, 'success'); refreshSubjects(); }} // Added 'success' type
+           onError={(message) => showToast(message, 'error')} // Added 'error' type
       />
-
-       {/* No custom MarkAllModal needed */}
     </View>
   );
 }
 
 
-// --- Styles (Keep styles from the previous version, removing MarkAllModal styles) ---
+// --- Add Toast styles ---
 const styles = StyleSheet.create({
-  // ... (All styles from the previous version EXCEPT the MarkAllModal specific styles)
     container: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0a0a0a',
-  },
-  loadingText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '500',
-    marginTop: 16,
-  },
-  toastContainer: {
-    position: 'absolute',
-    top: 60, // Adjusted from original to avoid status bar overlap potentially
-    left: 20,
-    right: 20,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#10b981', // Default success color
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 1000,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  toastText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingTop: 60, // Add padding to avoid status bar overlap
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    marginBottom: 20,
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-    flex: 1,
-  },
-  monthNavigation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  navButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  monthInfo: {
-    alignItems: 'center',
-  },
-  monthText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  currentMonthBadge: {
-    backgroundColor: '#8b5cf6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  currentMonthText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  statsCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  statsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1, // Ensure equal spacing
-    paddingHorizontal: 4, // Add padding if numbers get too wide
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    textAlign: 'center', // Center label text
-  },
-  calendarCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  weekDaysHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#262626',
-  },
-   weekDayText: {
-    color: '#6b7280',
-    fontSize: 12,
-    fontWeight: '600',
-    width: `${100 / 7}%`, // Ensure equal width
-    textAlign: 'center',
-  },
-   calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  calendarDay: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 4,
-    position: 'relative',
-  },
-  calendarDayDisabled: {
-    opacity: 0.3,
-  },
-  calendarDayToday: {
-    // Optional: Highlight today differently
-    // backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    // borderRadius: 8,
-  },
-  calendarDaySelected: {
-    backgroundColor: '#8b5cf6',
-    borderRadius: 8,
-  },
-  dayNumber: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  dayNumberDisabled: {
-    color: '#4b5563',
-  },
-  dayNumberToday: {
-    color: '#3b82f6', // Make today's number blue
-    fontWeight: '700',
-  },
-  dayNumberSelected: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  attendanceDot: {
-    position: 'absolute',
-    bottom: 4, // Adjusted position
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.8)', // Green with slight transparency
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  attendanceDotAbsent: {
-    backgroundColor: 'rgba(239, 68, 68, 0.8)', // Red with slight transparency
-  },
-  attendanceDotText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  selectedDateCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  selectedDateHeader: {
-    flexDirection: 'row', // Added for button alignment
-    justifyContent: 'space-between', // Added for button alignment
-    alignItems: 'center', // Added for button alignment
-    marginBottom: 16,
-  },
-   selectedDateTitleContainer: { // New container for title/subtitle
-    flex: 1, // Allow title to take available space
-    marginRight: 12, // Space before button
-  },
-  selectedDateTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  selectedDateSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-   markAllButton: { // Style for the new button
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  markAllButtonText: {
-    color: '#8b5cf6',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  noClassesBox: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  noClassesText: {
-    color: '#6b7280',
-    fontSize: 14,
-    marginTop: 8,
-  },
-  classList: {
-    gap: 12,
-  },
-  classItem: {
-    backgroundColor: '#262626',
-    borderRadius: 12,
-    // overflow: 'hidden', // Removed
-  },
-  classMainContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  classLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1, // Allow left side to grow
-    marginRight: 8, // Add margin to prevent overlap
-    gap: 12,
-  },
-  classIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  classInfo: {
-     flex: 1, // Allow info to take available space
-  },
-  classNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  className: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-    flexShrink: 1, // Allow name to shrink if needed
-  },
-  parallelTag: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  parallelTagText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#f59e0b',
-    textTransform: 'uppercase',
-  },
-  classTime: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-  classRight: {
-     marginLeft: 'auto', // Push to the right
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  bottomPadding: {
-    height: 100, // Ensure content doesn't hide behind tab bar
-  },
-   modalOverlay: { // Shared overlay style
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-   modalContent: { // For Parallel Class Modal
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-    modalHeader: { // Shared style for modal headers
-    marginBottom: 20,
-    alignItems: 'center', // Center header text
-  },
-   modalTitle: { // Shared style
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#E0E0E0',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  modalSubtitle: { // Shared style
-    fontSize: 14,
-    color: '#A0A0A0',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  parallelOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0a0a0a',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-  parallelOptionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  parallelIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  parallelOptionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    flex: 1,
-  },
-  modalCancelBtn: { // Style for the smaller cancel button in parallel modal
-    backgroundColor: '#262626',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
+        flex: 1,
+        backgroundColor: '#0a0a0a',
+      },
+      loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#0a0a0a',
+      },
+      loadingText: {
+        color: '#ffffff',
+        fontSize: 18,
+        fontWeight: '500',
+        marginTop: 16,
+      },
+      toastContainer: {
+        position: 'absolute',
+        top: 0, // Will be animated in
+        left: 20,
+        right: 20,
+        padding: 16,
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        zIndex: 1000,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 10,
+      },
+      // Added styles for different toast types
+      toastSuccess: {
+        backgroundColor: '#10b981', // Green for success
+      },
+      toastError: {
+        backgroundColor: '#ef4444', // Red for error
+      },
+      toastText: {
+        color: '#ffffff',
+        fontSize: 15,
+        fontWeight: '600',
+        flex: 1,
+      },
+      scrollView: {
+        flex: 1,
+      },
+      scrollContent: {
+        paddingHorizontal: 20, // Keep horizontal padding consistent
+        paddingTop: 60, // Ensure space below status bar
+        paddingBottom: 20, // Add some bottom padding before tab bar space
+      },
+      header: {
+        marginBottom: 24,
+      },
+      title: {
+        fontSize: 28,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 4,
+      },
+      subtitle: {
+        fontSize: 14,
+        color: '#6b7280',
+      },
+      errorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.2)',
+        marginBottom: 20,
+      },
+      errorText: {
+        color: '#ef4444',
+        fontSize: 14,
+        fontWeight: '500',
+        marginLeft: 8,
+        flex: 1,
+      },
+      monthNavigation: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+      },
+      navButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#1a1a1a',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      monthInfo: {
+        alignItems: 'center',
+      },
+      monthText: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#ffffff',
+        marginBottom: 4,
+      },
+      currentMonthBadge: {
+        backgroundColor: '#8b5cf6',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+      },
+      currentMonthText: {
+        color: '#ffffff',
+        fontSize: 11,
+        fontWeight: '600',
+      },
+      statsCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 24,
+      },
+      statsTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#ffffff',
+        marginBottom: 16,
+      },
+      statsGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+      },
+      statItem: {
+        alignItems: 'center',
+        flex: 1,
+        paddingHorizontal: 4,
+      },
+      statNumber: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 4,
+      },
+      statLabel: {
+        fontSize: 12,
+        color: '#6b7280',
+        textAlign: 'center',
+      },
+      calendarCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 24,
+      },
+      weekDaysHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginBottom: 12,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#262626',
+      },
+       weekDayText: {
+        color: '#6b7280',
+        fontSize: 12,
+        fontWeight: '600',
+        width: `${100 / 7}%`,
+        textAlign: 'center',
+      },
+       calendarGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+      },
+      calendarDay: {
+        width: '14.28%',
+        aspectRatio: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 4,
+        position: 'relative',
+      },
+      calendarDayDisabled: {
+        opacity: 0.3,
+      },
+      calendarDayToday: {
+        // Style for today's date container if needed
+      },
+      calendarDaySelected: {
+        backgroundColor: '#8b5cf6',
+        borderRadius: 8,
+      },
+      dayNumber: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '500',
+      },
+      dayNumberDisabled: {
+        color: '#4b5563',
+      },
+      dayNumberToday: {
+        color: '#3b82f6', // Make today's number blue
+        fontWeight: '700',
+      },
+      dayNumberSelected: {
+        color: '#ffffff',
+        fontWeight: '700',
+      },
+      attendanceDot: {
+        position: 'absolute',
+        bottom: 4,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      attendanceDotAbsent: {
+        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+      },
+      attendanceDotText: {
+        color: '#ffffff',
+        fontSize: 9,
+        fontWeight: '700',
+      },
+      selectedDateCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 24,
+      },
+      selectedDateHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+      },
+       selectedDateTitleContainer: {
+        flex: 1,
+        marginRight: 12,
+      },
+      selectedDateTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 4,
+      },
+      selectedDateSubtitle: {
+        fontSize: 14,
+        color: '#6b7280',
+      },
+       markAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        gap: 6,
+      },
+      markAllButtonText: {
+        color: '#8b5cf6',
+        fontSize: 14,
+        fontWeight: '600',
+      },
+      noClassesBox: {
+        alignItems: 'center',
+        paddingVertical: 32,
+        backgroundColor: '#262626', // Slightly different background
+        borderRadius: 12,
+      },
+      noClassesText: {
+        color: '#9ca3af', // Lighter grey
+        fontSize: 14,
+        marginTop: 8,
+      },
+      classList: {
+        gap: 12,
+      },
+      classItem: {
+        backgroundColor: '#262626',
+        borderRadius: 12,
+      },
+      classMainContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+      },
+      classLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 8,
+        gap: 12,
+      },
+      classIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      classInfo: {
+         flex: 1,
+      },
+      classNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4,
+      },
+      className: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#ffffff',
+        flexShrink: 1,
+      },
+      parallelTag: {
+        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(245, 158, 11, 0.3)',
+      },
+      parallelTagText: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#f59e0b',
+        textTransform: 'uppercase',
+      },
+      classTime: {
+        fontSize: 13,
+        color: '#6b7280',
+      },
+      classRight: {
+         marginLeft: 'auto',
+      },
+      statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+      },
+      statusText: {
+        fontSize: 13,
+        fontWeight: '600',
+      },
+      bottomPadding: {
+        height: 100,
+      },
+       modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+      },
+       modalContent: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 20,
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+        borderWidth: 1,
+        borderColor: '#262626',
+      },
+        modalHeader: {
+        marginBottom: 20,
+        alignItems: 'center',
+      },
+       modalTitle: {
+        fontSize: 18, // Adjusted size
+        fontWeight: '600',
+        color: '#E0E0E0',
+        marginBottom: 8,
+        textAlign: 'center',
+      },
+      modalSubtitle: {
+        fontSize: 14,
+        color: '#A0A0A0',
+        textAlign: 'center',
+        marginBottom: 24,
+      },
+      parallelOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0a0a0a', // Darker background for options
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 12,
+        borderWidth: 1, // Changed to 1
+        borderColor: '#262626',
+      },
+      parallelOptionSelected: {
+        borderColor: '#8b5cf6',
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+      },
+      parallelOptionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        flex: 1, // Allow text to take space
+      },
+      parallelIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      parallelOptionText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#ffffff',
+        flex: 1, // Allow text wrapping
+      },
+      modalCancelBtn: {
+        backgroundColor: '#262626',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 8,
+      },
+      modalCancelText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#ffffff',
+      },
 });
 
-function showToast(arg0: string) {
-  throw new Error('Function not implemented.');
-}
+// REMOVED the placeholder showToast function

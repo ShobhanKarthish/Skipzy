@@ -1,12 +1,14 @@
 import QuickMarkBottomSheet from '@/components/QuickMarkBottomSheet';
 import { useSubjects } from '@/contexts/SubjectsContext';
 import { useUserProfile } from '@/contexts/UserProfileContext';
-import { AppSubject } from '@/types/supabase';
+// Added AppAttendanceRecord to the import below
+import { AppSubject, AppTimetableEntry, AppAttendanceRecord } from '@/types/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Animated,
   Dimensions,
+  Easing,
   Modal,
   ScrollView,
   StatusBar,
@@ -19,21 +21,24 @@ import Svg, { Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
-// Generate schedule from subjects data using the schedule array
-const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, userPreferences?: Record<string, string>) => {
-  const scheduleItems: Array<{
+// Define the type for schedule items explicitly
+interface ScheduleItem {
     name: string;
     time: string;
-    icon: string;
+    icon: keyof typeof Ionicons.glyphMap; // Use Ionicons keys
     subjectId: string;
     slotNumber: number;
     isParallel?: boolean;
-    parallelOptions?: Array<{ name: string; subjectId: string; icon: string }>;
-  }> = [];
-  
-  // Collect all schedule entries for this day from all subjects
-  const slotMap = new Map<number, Array<{ subject: AppSubject; entry: any }>>();
-  
+    parallelOptions?: Array<{ name: string; subjectId: string; icon: keyof typeof Ionicons.glyphMap }>;
+}
+
+
+// Generate schedule from subjects data using the schedule array
+const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string): ScheduleItem[] => {
+  const scheduleItems: ScheduleItem[] = [];
+
+  const slotMap = new Map<number, Array<{ subject: AppSubject; entry: AppTimetableEntry }>>();
+
   subjects.forEach(subject => {
     if (subject.schedule && subject.schedule.length > 0) {
       subject.schedule
@@ -46,59 +51,52 @@ const generateScheduleFromSubjects = (subjects: AppSubject[], dayName: string, u
         });
     }
   });
-  
-  // Process each slot
+
   slotMap.forEach((items, slotNumber) => {
+    const getIcon = (classType: string): keyof typeof Ionicons.glyphMap => {
+        return classType === 'Lecture' ? 'school-outline' :
+               classType === 'Lab' ? 'flask-outline' :
+               'medical-outline'; // Default or OPD icon
+    };
+
     if (items.length > 1) {
-      // Parallel classes detected
-      const preferenceKey = `${dayName}_${slotNumber}`;
-      const preferredSubjectId = userPreferences?.[preferenceKey];
-      
-      // Find preferred subject or use first one
-      const selectedItem = preferredSubjectId 
-        ? items.find(item => item.subject.id === preferredSubjectId) || items[0]
-        : items[0];
-      
-      // Build combined display name for UI
+      // Find preferred subject or use first one (removed preference logic for simplicity here)
+      const selectedItem = items[0];
       const combinedName = items.map(i => i.subject.name).join(' / ');
-      
+
       scheduleItems.push({
         name: combinedName,
         time: selectedItem.entry.timeString,
-        icon: selectedItem.subject.classType === 'Lecture' ? 'school-outline' : 
-              selectedItem.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+        icon: getIcon(selectedItem.subject.classType),
         subjectId: selectedItem.subject.id,
         slotNumber: slotNumber,
         isParallel: true,
         parallelOptions: items.map(item => ({
           name: item.subject.name,
           subjectId: item.subject.id,
-          icon: item.subject.classType === 'Lecture' ? 'school-outline' : 
-                item.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+          icon: getIcon(item.subject.classType),
         })),
       });
-    } else {
-      // Single class
+    } else if (items.length === 1) { // Ensure items array is not empty
       const item = items[0];
       scheduleItems.push({
         name: item.subject.name,
         time: item.entry.timeString,
-        icon: item.subject.classType === 'Lecture' ? 'school-outline' : 
-              item.subject.classType === 'Lab' ? 'flask-outline' : 'medical-outline',
+        icon: getIcon(item.subject.classType),
         subjectId: item.subject.id,
         slotNumber: slotNumber,
       });
     }
   });
-  
-  // Sort by slot number to show in correct order
+
   return scheduleItems.sort((a, b) => a.slotNumber - b.slotNumber);
 };
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedPercentageText = Animated.createAnimatedComponent(Text);
 
 const HomeScreen = () => {
-  const { subjects, loading: subjectsLoading } = useSubjects();
+  const { subjects, loading: subjectsLoading, refreshSubjects } = useSubjects();
   const { userProfile, loading: profileLoading } = useUserProfile();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [progressAnim] = useState(new Animated.Value(0));
@@ -107,9 +105,47 @@ const HomeScreen = () => {
   const [quickMarkVisible, setQuickMarkVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<AppSubject | null>(null);
   const [parallelClassModalVisible, setParallelClassModalVisible] = useState(false);
-  const [selectedParallelClass, setSelectedParallelClass] = useState<any>(null);
+  const [selectedParallelClass, setSelectedParallelClass] = useState<ScheduleItem | null>(null);
 
-  // Fast lookups: build a subject map once per subjects change
+  // --- Start: Added Toast Logic ---
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const toastAnim = useRef(new Animated.Value(-100)).current;
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimeout.current) {
+        clearTimeout(toastTimeout.current);
+    }
+    setToastMessage(message);
+    setToastType(type);
+    Animated.timing(toastAnim, {
+        toValue: 60,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+    }).start();
+    toastTimeout.current = setTimeout(() => {
+        Animated.timing(toastAnim, {
+        toValue: -100,
+        duration: 300,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+        }).start(() => {
+        setToastMessage(null);
+        });
+    }, 3000);
+  };
+
+  useEffect(() => { // Cleanup timeout
+    return () => {
+        if (toastTimeout.current) {
+            clearTimeout(toastTimeout.current);
+        }
+    };
+  }, []);
+  // --- End: Added Toast Logic ---
+
   const subjectsById = useMemo(() => {
     const map = new Map<string, AppSubject>();
     subjects.forEach(s => map.set(s.id, s));
@@ -118,7 +154,6 @@ const HomeScreen = () => {
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Calculate overall attendance from all subjects
   const calculateOverallAttendance = () => {
     let totalAttended = 0;
     let totalClasses = 0;
@@ -127,10 +162,11 @@ const HomeScreen = () => {
       const attended = subject.history.filter(
         h => h.status === 'Present' || h.status === 'OD'
       ).length;
+      // Consistent total calculation
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
       ).length;
-      
+
       totalAttended += attended;
       totalClasses += total;
     });
@@ -138,30 +174,34 @@ const HomeScreen = () => {
     return totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 100) : 0;
   };
 
-  const targetPercentage = calculateOverallAttendance();
+  const targetPercentage = useMemo(calculateOverallAttendance, [subjects]);
 
   useEffect(() => {
-    const listenerId = percentageAnim.addListener(({ value }) => {
-      setPercentageText(Math.round(value).toString());
-    });
+     const listenerId = percentageAnim.addListener(({ value }) => {
+        setPercentageText(Math.max(0, Math.min(100, Math.round(value))).toString());
+     });
 
     Animated.parallel([
       Animated.timing(progressAnim, {
         toValue: targetPercentage,
-        duration: 1500,
+        duration: 1000,
         useNativeDriver: true,
+        easing: Easing.out(Easing.ease),
       }),
       Animated.timing(percentageAnim, {
         toValue: targetPercentage,
-        duration: 1500,
+        duration: 1000,
         useNativeDriver: false,
+        easing: Easing.out(Easing.ease),
       }),
     ]).start();
 
     return () => {
       percentageAnim.removeListener(listenerId);
+      progressAnim.stopAnimation();
+      percentageAnim.stopAnimation();
     };
-  }, [targetPercentage, subjects]);
+  }, [targetPercentage]);
 
   const radius = 50;
   const strokeWidth = 8;
@@ -170,12 +210,14 @@ const HomeScreen = () => {
   const strokeDashoffset = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: [circumference, 0],
+    extrapolate: 'clamp',
   });
 
   const getWeekDates = () => {
     const dayOfWeek = selectedDate.getDay();
     const startOfWeek = new Date(selectedDate);
-    startOfWeek.setDate(selectedDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    const diff = selectedDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+    startOfWeek.setDate(diff);
 
     const dates = [];
     for (let i = 0; i < 7; i++) {
@@ -204,40 +246,38 @@ const HomeScreen = () => {
     return generateScheduleFromSubjects(subjects, dayName);
   };
 
-  const handleScheduleItemPress = (item: any) => {
-    // Check if this is a parallel class
+  const handleScheduleItemPress = (item: ScheduleItem) => {
     if (item.isParallel && item.parallelOptions && item.parallelOptions.length > 1) {
-      // Show parallel class selection modal
       setSelectedParallelClass(item);
       setParallelClassModalVisible(true);
     } else {
-      // Find subject by ID if available, otherwise by name
-      const subject = item.subjectId 
-        ? subjectsById.get(item.subjectId)
-        : subjects.find(s => 
-            s.name.toLowerCase().includes(item.name.toLowerCase()) || 
-            item.name.toLowerCase().includes(s.name.toLowerCase())
-          );
-      
+      const subject = subjectsById.get(item.subjectId);
       if (subject) {
         setSelectedSubject(subject);
         setQuickMarkVisible(true);
+      } else {
+         console.warn(`Subject with ID ${item.subjectId} not found for schedule item: ${item.name}`);
+         showToast(`Could not find subject: ${item.name}`, 'error');
       }
     }
+  };
+
+   const toLocalYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
 
   const weekDates = getWeekDates();
   const calendarDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const schedule = useMemo(() => getScheduleForDate(selectedDate), [subjects, selectedDate]);
-  // Use local YYYY-MM-DD to match records and other screens
-  const selectedDateKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+  const selectedDateKey = toLocalYMD(selectedDate);
 
-  // Calculate total classes attended
-  const totalClassesAttended = subjects.reduce((acc, subject) => {
+  const totalClassesAttended = useMemo(() => subjects.reduce((acc, subject) => {
     return acc + subject.history.filter(h => h.status === 'Present' || h.status === 'OD').length;
-  }, 0);
+  }, 0), [subjects]);
 
-  // Calculate safe to skip
   const calculateSafeToSkip = () => {
     let totalSafe = 0;
     subjects.forEach(subject => {
@@ -247,7 +287,7 @@ const HomeScreen = () => {
       const total = subject.history.filter(
         h => h.status === 'Present' || h.status === 'Absent'
       ).length;
-      
+
       if (total > 0) {
         const minRequired = Math.ceil((subject.minAttendance / 100) * total);
         const maxSkips = total - minRequired;
@@ -257,46 +297,52 @@ const HomeScreen = () => {
     });
     return totalSafe;
   };
+  const safeToSkipCount = useMemo(calculateSafeToSkip, [subjects]);
 
-  // Removed blocking loading state - show UI immediately for better UX
-  // Data will load in background and update when ready
 
   const handleParallelClassSelection = (subjectId: string) => {
-    // Find the selected subject
-    const subject = subjects.find(s => s.id === subjectId);
-    
+    const subject = subjectsById.get(subjectId);
     if (subject) {
       setSelectedSubject(subject);
       setParallelClassModalVisible(false);
       setQuickMarkVisible(true);
+    } else {
+        showToast(`Selected parallel subject (ID: ${subjectId}) not found.`, 'error');
+        setParallelClassModalVisible(false);
     }
   };
 
-  // Get time-based greeting with variety
   const getGreeting = () => {
     const hour = new Date().getHours();
-    
-    const morningGreetings = ['Good morning', 'Fresh start', 'Morning light'];
-    const afternoonGreetings = ['Good afternoon', 'Easy pace', 'Steady flow'];
-    const eveningGreetings = ['Good evening', 'Calm mind', 'Soft close'];
-    const nightGreetings = ['Good night', 'Rest well', 'Quiet peace'];
-    
-    const getRandomGreeting = (greetings: string[]) => {
-      return greetings[Math.floor(Math.random() * greetings.length)];
-    };
-    
-    if (hour >= 5 && hour < 12) return getRandomGreeting(morningGreetings);
-    if (hour >= 12 && hour < 17) return getRandomGreeting(afternoonGreetings);
-    if (hour >= 17 && hour < 21) return getRandomGreeting(eveningGreetings);
-    return getRandomGreeting(nightGreetings);
+    if (hour < 5) return 'Night owl?';
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    if (hour < 21) return 'Good evening';
+    return 'Good night';
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-      
-      <ScrollView 
-        style={styles.scrollView} 
+
+       {/* --- Start: Added Toast Rendering --- */}
+       {toastMessage && (
+        <Animated.View style={[
+          styles.toastContainer,
+          { transform: [{ translateY: toastAnim }] },
+          toastType === 'error' ? styles.toastError : styles.toastSuccess
+        ]}>
+          <Ionicons
+              name={toastType === 'error' ? 'alert-circle-outline' : 'information-circle-outline'}
+              size={22} color="#ffffff" />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+       )}
+       {/* --- End: Added Toast Rendering --- */}
+
+
+      <ScrollView
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -304,11 +350,11 @@ const HomeScreen = () => {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.greeting}>
-              {getGreeting()}, <Text style={styles.userName}>{userProfile?.name || 'Student'}</Text>
+              {getGreeting()}, <Text style={styles.userName}>{userProfile?.name?.split(' ')[0] || 'Student'}</Text>
             </Text>
           </View>
-          <TouchableOpacity style={styles.profilePic} activeOpacity={0.7}>
-            <Ionicons name="person" size={24} color="#8b5cf6" />
+          <TouchableOpacity style={styles.profilePic} activeOpacity={0.7} onPress={() => { /* Consider router.push('/profile'); */ }}>
+             <Ionicons name="person-circle-outline" size={30} color="#8b5cf6" />
           </TouchableOpacity>
         </View>
 
@@ -318,7 +364,7 @@ const HomeScreen = () => {
             {/* Circular Progress */}
             <View style={styles.progressSection}>
               <View style={styles.circularProgressContainer}>
-                <Svg width={140} height={140}>
+                <Svg width={140} height={140} viewBox="0 0 140 140">
                   <Circle
                     cx="70"
                     cy="70"
@@ -342,10 +388,10 @@ const HomeScreen = () => {
                   />
                 </Svg>
                 <View style={styles.progressTextContainer}>
-                  <Animated.Text style={styles.progressPercentage}>
+                  <AnimatedPercentageText style={styles.progressPercentage}>
                     {percentageText}
                     <Text style={styles.percentSymbol}>%</Text>
-                  </Animated.Text>
+                  </AnimatedPercentageText>
                   <Text style={styles.progressLabel}>Attendance</Text>
                 </View>
               </View>
@@ -354,8 +400,8 @@ const HomeScreen = () => {
             {/* Stats Right */}
             <View style={styles.statsRight}>
               <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                <View style={[styles.statIconContainer, {backgroundColor: 'rgba(16, 185, 129, 0.1)'}]}>
+                  <Ionicons name="checkmark-done" size={24} color="#10b981" />
                 </View>
                 <View style={styles.statTextContainer}>
                   <Text style={styles.statNumber}>{totalClassesAttended}</Text>
@@ -364,12 +410,12 @@ const HomeScreen = () => {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="shield-checkmark" size={24} color="#3b82f6" />
-                </View>
+                 <View style={[styles.statIconContainer, {backgroundColor: 'rgba(59, 130, 246, 0.1)'}]}>
+                  <Ionicons name="play-skip-forward" size={20} color="#3b82f6" />
+                 </View>
                 <View style={styles.statTextContainer}>
-                  <Text style={styles.statNumber}>{calculateSafeToSkip()}</Text>
-                  <Text style={styles.statLabel}>Safe to Skip</Text>
+                  <Text style={styles.statNumber}>{safeToSkipCount}</Text>
+                  <Text style={styles.statLabel}>Safe Skips Left</Text>
                 </View>
               </View>
             </View>
@@ -379,8 +425,8 @@ const HomeScreen = () => {
         {/* Week Days Selector */}
         <View style={styles.weekSection}>
           <Text style={styles.sectionTitle}>This Week</Text>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.daySelectorContainer}
           >
@@ -418,47 +464,39 @@ const HomeScreen = () => {
             </Text>
             <Text style={styles.classCount}>{schedule.length} {schedule.length === 1 ? 'class' : 'classes'}</Text>
           </View>
-          
+
           {schedule.length === 0 ? (
             <View style={styles.noClassesContainer}>
               <View style={styles.noClassesIcon}>
                 <Ionicons name="calendar-outline" size={48} color="#4b5563" />
               </View>
-              <Text style={styles.noClassesText}>No classes today</Text>
+              <Text style={styles.noClassesText}>No classes scheduled</Text>
               <Text style={styles.noClassesSubtext}>Enjoy your free time!</Text>
             </View>
           ) : (
             <View style={styles.scheduleList}>
               {schedule.map((item, index) => {
-                // Find matching subject and check if marked for selected date
-                const subject = item.subjectId 
-                  ? subjects.find(s => s.id === item.subjectId)
-                  : subjects.find(s => 
-                      s.name.toLowerCase().includes(item.name.toLowerCase()) || 
-                      item.name.toLowerCase().includes(s.name.toLowerCase())
-                    );
-                
-                let isMarked = false;
-                let dateRecord: { status: 'Present'|'Absent'|'Holiday'|'OD' } | undefined;
-                if (subject) {
-                  dateRecord = subject.history.find(record => record.date === selectedDateKey);
-                  isMarked = !!dateRecord;
+                const subjectData = subjectsById.get(item.subjectId);
+                let dateRecord: AppAttendanceRecord | undefined; // Use the imported type
+                if (subjectData) {
+                  dateRecord = subjectData.history.find(record => record.date === selectedDateKey);
                 }
+                const isMarked = !!dateRecord;
 
                 return (
-                  <TouchableOpacity 
-                    key={index} 
+                  <TouchableOpacity
+                    key={`${item.subjectId}-${item.slotNumber}-${index}`} // More unique key
                     style={styles.scheduleCard}
                     activeOpacity={0.7}
                     onPress={() => handleScheduleItemPress(item)}
                   >
                     <View style={styles.scheduleLeft}>
                       <View style={styles.scheduleIconContainer}>
-                        <Ionicons name={item.icon as any} size={22} color="#8b5cf6" />
+                         <Ionicons name={item.icon} size={22} color="#8b5cf6" />
                       </View>
                       <View style={styles.scheduleContent}>
                         <View style={styles.scheduleNameRow}>
-                          <Text style={styles.scheduleName}>{item.name}</Text>
+                          <Text style={styles.scheduleName} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
                           {item.isParallel && (
                             <View style={styles.parallelTag}>
                               <Text style={styles.parallelTagText}>Choice</Text>
@@ -471,29 +509,29 @@ const HomeScreen = () => {
                         </View>
                       </View>
                     </View>
-                    
-                    {/* Conditionally render Mark or specific status badge */}
-                    {isMarked && dateRecord ? (() => {
-                      const status = dateRecord.status;
-                      const cfg = status === 'Present'
-                        ? { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981', color: '#10b981', icon: 'checkmark-circle' as const }
-                        : status === 'Absent'
-                          ? { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444', color: '#ef4444', icon: 'close-circle' as const }
-                          : status === 'OD'
-                            ? { bg: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b', color: '#f59e0b', icon: 'briefcase' as const }
-                            : { bg: 'rgba(59, 130, 246, 0.2)', border: '#3b82f6', color: '#3b82f6', icon: 'home' as const };
-                      return (
-                        <View style={[styles.markAttendanceBtn, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }] }>
-                          <Ionicons name={cfg.icon} size={20} color={cfg.color} />
-                          <Text style={[styles.markAttendanceText, { color: cfg.color }]}>{status}</Text>
+
+                    {/* Status Badge or Mark Button */}
+                     {isMarked && dateRecord ? (() => {
+                        const status = dateRecord.status;
+                         const cfg = status === 'Present'
+                            ? { bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', color: '#10b981', icon: 'checkmark-circle' as const }
+                            : status === 'Absent'
+                            ? { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', color: '#ef4444', icon: 'close-circle' as const }
+                            : status === 'OD'
+                            ? { bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b', color: '#f59e0b', icon: 'briefcase' as const }
+                            : { bg: 'rgba(59, 130, 246, 0.15)', border: '#3b82f6', color: '#3b82f6', icon: 'home' as const }; // Holiday
+                        return (
+                           <View style={[styles.markAttendanceBtn, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }]}>
+                            <Ionicons name={cfg.icon} size={18} color={cfg.color} />
+                            <Text style={[styles.markAttendanceText, { color: cfg.color }]}>{status}</Text>
+                           </View>
+                        );
+                     })() : (
+                        <View style={styles.markAttendanceBtn}>
+                            <Ionicons name="create-outline" size={18} color="#8b5cf6" />
+                            <Text style={styles.markAttendanceText}>Mark</Text>
                         </View>
-                      );
-                    })() : (
-                      <View style={styles.markAttendanceBtn}>
-                        <Ionicons name="checkmark-circle-outline" size={20} color="#8b5cf6" />
-                        <Text style={styles.markAttendanceText}>Mark</Text>
-                      </View>
-                    )}
+                     )}
                   </TouchableOpacity>
                 );
               })}
@@ -511,39 +549,35 @@ const HomeScreen = () => {
         animationType="fade"
         onRequestClose={() => setParallelClassModalVisible(false)}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setParallelClassModalVisible(false)}
+          onPress={() => setParallelClassModalVisible(false)} // Close on overlay press
         >
+          {/* Prevent modal closure when clicking inside content */}
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Your Class</Text>
-              <Text style={styles.modalSubtitle}>Choose which class you're attending</Text>
+              <Text style={styles.modalSubtitle}>Choose which class you attended/will attend</Text>
             </View>
-            
+
             {selectedParallelClass?.parallelOptions?.map((option: any, index: number) => (
               <TouchableOpacity
                 key={index}
-                style={[
-                  styles.parallelOption,
-                  option.subjectId === selectedParallelClass.subjectId && styles.parallelOptionSelected
-                ]}
+                style={styles.parallelOption}
                 onPress={() => handleParallelClassSelection(option.subjectId)}
                 activeOpacity={0.7}
               >
                 <View style={styles.parallelOptionLeft}>
                   <View style={styles.parallelIconContainer}>
-                    <Ionicons name={option.icon as any} size={24} color="#8b5cf6" />
+                     <Ionicons name={option.icon} size={24} color="#8b5cf6" />
                   </View>
                   <Text style={styles.parallelOptionText}>{option.name}</Text>
                 </View>
-                {option.subjectId === selectedParallelClass.subjectId && (
-                  <Ionicons name="checkmark-circle" size={24} color="#8b5cf6" />
-                )}
+                 <Ionicons name="chevron-forward" size={20} color="#6b7280" />
               </TouchableOpacity>
             ))}
-            
+
             <TouchableOpacity
               style={styles.modalCancelBtn}
               onPress={() => setParallelClassModalVisible(false)}
@@ -559,409 +593,422 @@ const HomeScreen = () => {
       <QuickMarkBottomSheet
         visible={quickMarkVisible}
         subject={selectedSubject}
-        selectedDate={selectedDate}
+        selectedDate={selectedDate} // Pass selectedDate
         onClose={() => {
           setQuickMarkVisible(false);
-          setSelectedSubject(null);
+          setSelectedSubject(null); // Clear selected subject on close
         }}
-        onSuccess={() => {
-          // No network refresh needed: SubjectsContext updates optimistically
+        onSuccess={(message) => {
+          showToast(message, 'success'); // Show toast on success
+          refreshSubjects(); // Refresh subjects data in context
+        }}
+        onError={(message) => {
+          showToast(message, 'error'); // Show error toast
         }}
       />
     </View>
   );
 };
 
+// --- Styles (Includes toast styles now) ---
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#9ca3af',
-    flexWrap: 'wrap',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  profilePic: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 2,
-    borderColor: '#8b5cf6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statsCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-  statsCardInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  progressSection: {
-    alignItems: 'center',
-  },
-  circularProgressContainer: {
-    width: 140,
-    height: 140,
-    position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressTextContainer: {
-    position: 'absolute',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressPercentage: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  percentSymbol: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#8b5cf6',
-  },
-  progressLabel: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  statsRight: {
-    flex: 1,
-    gap: 16,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  statIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#262626',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statTextContainer: {
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  statDivider: {
-    height: 1,
-    backgroundColor: '#262626',
-  },
-  weekSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  daySelectorContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingRight: 20,
-  },
-  dateItem: {
-    width: 56,
-    height: 72,
-    borderRadius: 16,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#262626',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  dateItemActive: {
-    backgroundColor: '#8b5cf6',
-    borderColor: '#8b5cf6',
-  },
-  dayLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  dayLabelActive: {
-    color: '#ffffff',
-  },
-  dateLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  dateLabelActive: {
-    color: '#ffffff',
-  },
-  todayDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#3b82f6',
-  },
-  scheduleSection: {
-    marginBottom: 24,
-  },
-  scheduleTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  classCount: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '600',
-  },
-  scheduleList: {
-    gap: 12,
-  },
-  scheduleCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-  scheduleLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  scheduleIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scheduleContent: {
-    flex: 1,
-  },
-  scheduleNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  scheduleName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-    flexShrink: 1, // Allow text to shrink and wrap if needed
-  },
-  parallelTag: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.4)',
-  },
-  parallelTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#8b5cf6',
-    textTransform: 'uppercase',
-  },
-  scheduleTimeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  scheduleTime: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  markAttendanceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  markAttendanceText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8b5cf6',
-  },
-  // --- New Styles ---
-  markAttendanceBtnMarked: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)', // Green tint
-  },
-  markAttendanceTextMarked: {
-    color: '#10b981', // Green text
-  },
-  // --- End of New Styles ---
-  noClassesContainer: {
-    paddingVertical: 48,
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-  noClassesIcon: {
-    marginBottom: 16,
-  },
-  noClassesText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  noClassesSubtext: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  bottomPadding: {
-    height: 100,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0a0a0a',
-  },
-  loadingText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '500',
-    marginTop: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    borderWidth: 1,
-    borderColor: '#262626',
-  },
-  modalHeader: {
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  parallelOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0a0a0a',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#262626',
-  },
-  parallelOptionSelected: {
-    borderColor: '#8b5cf6',
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-  },
-  parallelOptionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  parallelIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  parallelOptionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    flex: 1,
-  },
-  modalCancelBtn: {
-    backgroundColor: '#262626',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
+    container: {
+        flex: 1,
+        backgroundColor: '#0a0a0a',
+      },
+      // --- Added Toast Styles ---
+      toastContainer: {
+        position: 'absolute',
+        top: 0, // Animated in
+        left: 20,
+        right: 20,
+        padding: 16,
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        zIndex: 1000,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 10,
+      },
+      toastSuccess: { backgroundColor: '#10b981' },
+      toastError: { backgroundColor: '#ef4444' },
+      toastText: { color: '#ffffff', fontSize: 15, fontWeight: '600', flex: 1 },
+      // --- End Toast Styles ---
+      scrollView: {
+        flex: 1,
+      },
+      scrollContent: {
+        paddingHorizontal: 20,
+        paddingTop: 60,
+        paddingBottom: 20,
+      },
+      header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+      },
+      headerLeft: {
+        flex: 1,
+        marginRight: 16,
+      },
+      greeting: {
+        fontSize: 24,
+        fontWeight: '600',
+        color: '#9ca3af',
+        flexWrap: 'wrap',
+      },
+      userName: {
+        fontWeight: '700',
+        color: '#ffffff',
+      },
+      profilePic: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#1a1a1a',
+        borderWidth: 2,
+        borderColor: 'rgba(139, 92, 246, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      statsCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 24,
+        padding: 20,
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: '#262626',
+      },
+      statsCardInner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 20,
+      },
+      progressSection: {
+        alignItems: 'center',
+      },
+      circularProgressContainer: {
+        width: 140,
+        height: 140,
+        position: 'relative',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      progressTextContainer: {
+        position: 'absolute',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      progressPercentage: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#ffffff',
+      },
+      percentSymbol: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#8b5cf6',
+      },
+      progressLabel: {
+        fontSize: 11,
+        color: '#6b7280',
+        marginTop: 2,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+      },
+      statsRight: {
+        flex: 1,
+        gap: 16,
+      },
+      statItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+      },
+      statIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      statTextContainer: {
+        flex: 1,
+      },
+      statNumber: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 2,
+      },
+      statLabel: {
+        fontSize: 13,
+        color: '#6b7280',
+        fontWeight: '500',
+      },
+      statDivider: {
+        height: 1,
+        backgroundColor: '#262626',
+      },
+      weekSection: {
+        marginBottom: 24,
+      },
+      sectionTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 16,
+      },
+      daySelectorContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        paddingRight: 20,
+      },
+      dateItem: {
+        width: 56,
+        height: 72,
+        borderRadius: 16,
+        backgroundColor: '#1a1a1a',
+        borderWidth: 1,
+        borderColor: '#262626',
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative',
+      },
+      dateItemActive: {
+        backgroundColor: '#8b5cf6',
+        borderColor: '#8b5cf6',
+      },
+      dayLabel: {
+        fontSize: 12,
+        color: '#6b7280',
+        fontWeight: '600',
+        marginBottom: 6,
+        textTransform: 'uppercase',
+      },
+      dayLabelActive: {
+        color: '#ffffff',
+      },
+      dateLabel: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#ffffff',
+      },
+      dateLabelActive: {
+        color: '#ffffff',
+      },
+      todayDot: {
+        position: 'absolute',
+        bottom: 6,
+        left: '50%',
+        marginLeft: -3,
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#3b82f6',
+      },
+      scheduleSection: {
+        marginBottom: 24,
+      },
+      scheduleTitleRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+      },
+      classCount: {
+        fontSize: 14,
+        color: '#6b7280',
+        fontWeight: '600',
+      },
+      scheduleList: {
+        gap: 12,
+      },
+      scheduleCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderWidth: 1,
+        borderColor: '#262626',
+      },
+      scheduleLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: 12,
+        marginRight: 8,
+      },
+      scheduleIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      scheduleContent: {
+        flex: 1,
+      },
+      scheduleNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 6,
+      },
+      scheduleName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#ffffff',
+        flexShrink: 1,
+      },
+      parallelTag: {
+        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(245, 158, 11, 0.4)',
+      },
+      parallelTagText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#f59e0b',
+        textTransform: 'uppercase',
+      },
+      scheduleTimeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      },
+      scheduleTime: {
+        fontSize: 13,
+        color: '#6b7280',
+        fontWeight: '500',
+      },
+      markAttendanceBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        minWidth: 80,
+        justifyContent: 'center',
+      },
+      markAttendanceText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#8b5cf6',
+      },
+      noClassesContainer: {
+        paddingVertical: 48,
+        alignItems: 'center',
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#262626',
+        marginTop: 16,
+      },
+      noClassesIcon: {
+        marginBottom: 16,
+      },
+      noClassesText: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 4,
+      },
+      noClassesSubtext: {
+        color: '#6b7280',
+        fontSize: 14,
+      },
+      bottomPadding: {
+        height: 100,
+      },
+      modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+      },
+      modalContent: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 20,
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+        borderWidth: 1,
+        borderColor: '#262626',
+      },
+      modalHeader: {
+        marginBottom: 20,
+        alignItems: 'center',
+      },
+      modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#ffffff',
+        marginBottom: 6,
+      },
+      modalSubtitle: {
+        fontSize: 14,
+        color: '#6b7280',
+        textAlign: 'center',
+      },
+      parallelOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0a0a0a',
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#262626',
+      },
+      parallelOptionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        flex: 1,
+      },
+      parallelIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      parallelOptionText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#ffffff',
+        flex: 1,
+      },
+      modalCancelBtn: {
+        backgroundColor: '#262626',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 8,
+      },
+      modalCancelText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#ffffff',
+      },
 });
+// --- End: Styles ---
 
 export default HomeScreen;
