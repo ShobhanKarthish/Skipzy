@@ -1,43 +1,10 @@
-# Node dependencies
-node_modules/
+# IDE
+.idea/
+.vscode/
 
-# Expo build and environment files
-.expo/
-dist/
-web-build/
-expo-env.d.ts
+# Unused example
+app-example/
 
-# Native build and signing files
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro bundler health check files
-.metro-health-check*
-
-# Debug logs
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS system files
-.DS_Store
-*.pem
-
-# Environment variable files
-.env
-.env*.local
-
-# TypeScript build info
-*.tsbuildinfo
-
-# Backup or example app directories
-app-example
-
-# Generated native folders (build outputs)
-ios/
-android/
+# Build artifacts
+*.apk
+*.aab
