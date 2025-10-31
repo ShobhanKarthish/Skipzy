@@ -151,7 +151,7 @@ export default function AuthScreen() {
         <View style={styles.content}>
           <View style={styles.logoContainer}>
             <Image
-              source={require('../assets/images/icon.png')}
+              source={require('../assets/images/icon.webp')}
               style={styles.logoImage}
             />
           </View>
