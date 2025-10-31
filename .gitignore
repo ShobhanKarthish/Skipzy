@@ -1,10 +1,90 @@
-# IDE
+# =====================================================
+# 🧹 Skipzy .gitignore — Optimized for React Native + Expo
+# =====================================================
+
+# IDE / Editor junk
 .idea/
 .vscode/
+*.swp
+*.sublime-project
+*.sublime-workspace
 
-# Unused example
-app-example/
+# OS files
+.DS_Store
+Thumbs.db
 
-# Build artifacts
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Expo / Metro
+.expo/
+.expo-shared/
+.expo3/
+.expo-cache/
+*.expo
+.expo-dev-cache/
+
+# Android / iOS build
+android/.gradle/
+android/app/build/
+android/build/
+ios/build/
+ios/Pods/
+ios/DerivedData/
 *.apk
 *.aab
+
+# Build / Distribution
+dist/
+build/
+web-build/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Testing / Coverage
+coverage/
+jest-html-reporters-*
+*.lcov
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# System backups
+*.orig
+*.rej
+
+# VSCode settings backups
+.history/
+
+# macOS metadata
+.AppleDouble
+.LSOverride
+
+# Lock files (optional, uncomment if you don’t want them)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Docker
+docker-compose.override.yml
+.docker/
+.dockerignore
+
+# EAS builds
+.eas/
