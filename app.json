@@ -21,8 +21,7 @@
       "package": "com.shobhan25.skipzy"
     },
     "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "output": "static"
     },
     "plugins": [
       "expo-router",

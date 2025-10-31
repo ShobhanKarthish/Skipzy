@@ -162,9 +162,9 @@ const HomeScreen = () => {
       const attended = subject.history.filter(
         h => h.status === 'Present' || h.status === 'OD'
       ).length;
-      // Consistent total calculation
+      // Match history tab: include OD in total
       const total = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'Absent'
+        h => h.status === 'Present' || h.status === 'Absent' || h.status === 'OD'
       ).length;
 
       totalAttended += attended;
