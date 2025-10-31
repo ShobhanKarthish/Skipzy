@@ -73,9 +73,9 @@ export default function ProfileScreen() {
       const attended = subject.history.filter(
         h => h.status === 'Present' || h.status === 'OD'
       ).length;
-      // Use Present and Absent for total calculation to match subjects.tsx logic
+      // Match home/history: include OD in total
       const total = subject.history.filter(
-        h => h.status === 'Present' || h.status === 'Absent'
+        h => h.status === 'Present' || h.status === 'Absent' || h.status === 'OD'
       ).length;
 
       totalAttended += attended;
@@ -113,8 +113,8 @@ export default function ProfileScreen() {
             if (record.status === 'Present' || record.status === 'OD') {
               totalAttended++;
             }
-            // Use Present and Absent for total to match overall calculation
-            if (record.status === 'Present' || record.status === 'Absent') {
+            // Match overall/home/history: include OD in total
+            if (record.status === 'Present' || record.status === 'Absent' || record.status === 'OD') {
               totalClasses++;
             }
           }
@@ -342,16 +342,22 @@ export default function ProfileScreen() {
                 {monthlyData.map((data, index) => (
                   <View key={index} style={styles.barWrapper}>
                     <View style={styles.barContainer}>
-                      <Text style={styles.barValue}>{data.percentage}%</Text>
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: `${data.percentage}%`, // Use percentage directly
-                            backgroundColor: data.percentage < (userProfile?.attendanceTarget || 75) ? '#f59e0b' : '#8b5cf6', // Color based on target
-                          },
-                        ]}
-                      />
+                      {/* Show value only on tap via toast; keep label hidden to declutter */}
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => showToast(`${data.month}: ${data.percentage}%`, 'success')}
+                        style={{ width: '100%', alignItems: 'center' }}
+                      >
+                        <View
+                          style={[
+                            styles.bar,
+                            {
+                              height: `${data.percentage}%`,
+                              backgroundColor: data.percentage < (userProfile?.attendanceTarget || 75) ? '#f59e0b' : '#8b5cf6',
+                            },
+                          ]}
+                        />
+                      </TouchableOpacity>
                     </View>
                     <Text style={styles.barLabel}>{data.month}</Text>
                   </View>
